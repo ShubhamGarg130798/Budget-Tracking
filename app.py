@@ -322,8 +322,7 @@ elif page_clean == "Add Expense":
         if submitted:
             if amount > 0 and added_by:
                 add_expense(expense_date, brand, category, amount, description, added_by)
-                st.success(f"✅ Expense of ₹{amount:,.2f} added for {brand}!")
-                st.balloons()
+                st.toast(f"✅ Expense of ₹{amount:,.2f} added successfully for {brand}!", icon="✅")
             else:
                 st.error("⚠️ Please enter amount and your name!")
 
