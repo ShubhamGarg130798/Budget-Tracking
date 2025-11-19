@@ -3,6 +3,9 @@ import sqlite3
 import pandas as pd
 from datetime import datetime, date
 import io
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 
 # Page configuration
 st.set_page_config(
@@ -10,6 +13,68 @@ st.set_page_config(
     page_icon="💰",
     layout="wide"
 )
+
+# Google Sheets Configuration
+SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+]
+
+def get_google_sheets_client():
+    """Initialize Google Sheets client using Streamlit secrets"""
+    try:
+        credentials_dict = dict(st.secrets["gcp_service_account"])
+        credentials = Credentials.from_service_account_info(
+            credentials_dict,
+            scopes=SCOPES
+        )
+        client = gspread.authorize(credentials)
+        return client
+    except Exception as e:
+        st.error(f"Google Sheets connection error: {e}")
+        return None
+
+def sync_to_google_sheets(data_dict):
+    """Sync expense data to Google Sheets"""
+    try:
+        client = get_google_sheets_client()
+        if client is None:
+            return False
+        
+        # Open the spreadsheet by name or create if doesn't exist
+        try:
+            spreadsheet = client.open(st.secrets["google_sheets"]["spreadsheet_name"])
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.warning("Spreadsheet not found. Please create it first.")
+            return False
+        
+        # Get or create the Expenses worksheet
+        try:
+            worksheet = spreadsheet.worksheet("Expenses")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(title="Expenses", rows="1000", cols="8")
+            # Add headers
+            worksheet.append_row([
+                "ID", "Date", "Brand", "Category", "Amount", 
+                "Description", "Added By", "Created At"
+            ])
+        
+        # Append the new row
+        row_data = [
+            data_dict.get('id', ''),
+            data_dict.get('date', ''),
+            data_dict.get('brand', ''),
+            data_dict.get('category', ''),
+            data_dict.get('amount', ''),
+            data_dict.get('description', ''),
+            data_dict.get('added_by', ''),
+            data_dict.get('created_at', '')
+        ]
+        worksheet.append_row(row_data)
+        return True
+    except Exception as e:
+        st.error(f"Error syncing to Google Sheets: {e}")
+        return False
 
 # Database setup
 def init_db():
@@ -78,8 +143,27 @@ def add_expense(date, brand, category, amount, description, added_by):
         INSERT INTO expenses (date, brand, category, amount, description, added_by)
         VALUES (?, ?, ?, ?, ?, ?)
     ''', (date, brand, category, amount, description, added_by))
+    
+    # Get the ID of the inserted row
+    expense_id = c.lastrowid
     conn.commit()
     conn.close()
+    
+    # Sync to Google Sheets
+    created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    data_dict = {
+        'id': expense_id,
+        'date': str(date),
+        'brand': brand,
+        'category': category,
+        'amount': amount,
+        'description': description,
+        'added_by': added_by,
+        'created_at': created_at
+    }
+    
+    sheets_synced = sync_to_google_sheets(data_dict)
+    return expense_id, sheets_synced
 
 def get_all_expenses():
     conn = sqlite3.connect('expenses.db')
@@ -197,8 +281,12 @@ if page == "Add Expense":
         
         if submitted:
             if amount > 0 and added_by:
-                add_expense(expense_date, brand, category, amount, description, added_by)
+                expense_id, sheets_synced = add_expense(expense_date, brand, category, amount, description, added_by)
                 st.success(f"✅ Expense of ₹{amount:,.2f} added for {brand}!")
+                if sheets_synced:
+                    st.success("✅ Data synced to Google Sheets!")
+                else:
+                    st.warning("⚠️ Saved locally but Google Sheets sync failed. Data is safe in the app.")
                 st.balloons()
             else:
                 st.error("Please enter amount and your name!")
