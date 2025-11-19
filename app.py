@@ -54,9 +54,9 @@ init_db()
 
 # Brand list (customize this with your 18 brands)
 BRANDS = [
-    "FundoBaBa", "Salary Adda", "FastPaise", "Brand 4", "Brand 5", "Brand 6",
-    "Brand 7", "Brand 8", "Brand 9", "Brand 10", "Brand 11", "Brand 12",
-    "Brand 13", "Brand 14", "Brand 15", "Brand 16", "Brand 17", "Brand 18"
+    "FundoBaBa", "Salary Adda", "FastPaise", "SnapPaisa", "Salary 4 Sure", "Duniya Finance",
+    "Tejas", "BlinkR", "Salary Setu", "Qua Loans", "Paisa Pop", "Salary 4 You",
+    "Rupee Hype", "Minutes Loan", "Squid Loan", "Zepto", "Paisa on Salary", "Jhatpat"
 ]
 
 # Expense categories
