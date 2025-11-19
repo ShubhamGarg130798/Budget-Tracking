@@ -140,6 +140,51 @@ def init_db():
         )
     ''')
     
+    # Check if columns exist and add them if they don't (for existing databases)
+    c.execute("PRAGMA table_info(expenses)")
+    columns = [col[1] for col in c.fetchall()]
+    
+    new_columns = [
+        ("stage1_status", "TEXT DEFAULT 'Pending'"),
+        ("stage1_approved_by", "TEXT"),
+        ("stage1_approved_date", "TIMESTAMP"),
+        ("stage1_remarks", "TEXT"),
+        ("stage2_status", "TEXT DEFAULT 'Pending'"),
+        ("stage2_approved_by", "TEXT"),
+        ("stage2_approved_date", "TIMESTAMP"),
+        ("stage2_remarks", "TEXT"),
+        ("stage3_status", "TEXT DEFAULT 'Pending'"),
+        ("stage3_paid_by", "TEXT"),
+        ("stage3_paid_date", "TIMESTAMP"),
+        ("stage3_payment_mode", "TEXT"),
+        ("stage3_transaction_ref", "TEXT"),
+        ("stage3_remarks", "TEXT")
+    ]
+    
+    for col_name, col_type in new_columns:
+        if col_name not in columns:
+            try:
+                c.execute(f"ALTER TABLE expenses ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+    
+    # Update existing records to have default status if NULL
+    c.execute("""
+        UPDATE expenses 
+        SET stage1_status = 'Pending' 
+        WHERE stage1_status IS NULL
+    """)
+    c.execute("""
+        UPDATE expenses 
+        SET stage2_status = 'Pending' 
+        WHERE stage2_status IS NULL
+    """)
+    c.execute("""
+        UPDATE expenses 
+        SET stage3_status = 'Pending' 
+        WHERE stage3_status IS NULL
+    """)
+    
     conn.commit()
     conn.close()
 
