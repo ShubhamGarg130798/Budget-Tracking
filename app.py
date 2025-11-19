@@ -13,6 +13,11 @@ st.set_page_config(
     layout="wide"
 )
 
+# ===== ADMIN CONFIGURATION =====
+# Change this password to secure your delete functionality
+ADMIN_PASSWORD = "admin123"  # ⚠️ CHANGE THIS PASSWORD!
+# ===============================
+
 # Custom CSS for better styling
 st.markdown("""
     <style>
@@ -408,18 +413,29 @@ elif page_clean == "View All Expenses":
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
         
-        # Delete functionality
+        # Delete functionality (Password Protected)
         st.markdown("---")
-        with st.expander("🗑️ Delete Expense"):
-            expense_to_delete = st.selectbox(
-                "Select expense to delete",
-                options=filtered_df['id'].tolist(),
-                format_func=lambda x: f"ID: {x} - {filtered_df[filtered_df['id']==x]['brand'].values[0]} - ₹{filtered_df[filtered_df['id']==x]['amount'].values[0]:,.2f}"
-            )
+        with st.expander("🗑️ Delete Expense (Admin Only)"):
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                expense_to_delete = st.selectbox(
+                    "Select expense to delete",
+                    options=filtered_df['id'].tolist(),
+                    format_func=lambda x: f"ID: {x} - {filtered_df[filtered_df['id']==x]['brand'].values[0]} - ₹{filtered_df[filtered_df['id']==x]['amount'].values[0]:,.2f}"
+                )
+            
+            with col2:
+                delete_password = st.text_input("🔐 Admin Password", type="password", key="delete_pwd")
+            
             if st.button("🗑️ Delete Selected Expense", type="secondary"):
-                delete_expense(expense_to_delete)
-                st.success("✅ Expense deleted!")
-                st.rerun()
+                # Password verification
+                if delete_password == ADMIN_PASSWORD:
+                    delete_expense(expense_to_delete)
+                    st.success("✅ Expense deleted successfully!")
+                    st.rerun()
+                else:
+                    st.error("❌ Incorrect password! Only admin can delete expenses.")
     
     else:
         st.info("📌 No expenses recorded yet. Add your first expense!")
