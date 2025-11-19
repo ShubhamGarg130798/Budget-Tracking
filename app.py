@@ -13,37 +13,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# ===== ADMIN CONFIGURATION =====
-# Change this password to secure your delete functionality
-ADMIN_PASSWORD = "admin123"  # ⚠️ CHANGE THIS PASSWORD!
-# ===============================
-
-# Initialize session state for authentication
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-
-def check_password():
-    """Returns True if the user enters correct password."""
-    
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == ADMIN_PASSWORD:
-            st.session_state.authenticated = True
-            del st.session_state["password"]  # Don't store password
-        else:
-            st.session_state.authenticated = False
-    
-    if not st.session_state.authenticated:
-        st.text_input(
-            "🔐 Enter Admin Password", 
-            type="password", 
-            on_change=password_entered, 
-            key="password"
-        )
-        return False
-    else:
-        return True
-
 # Custom CSS for better styling
 st.markdown("""
     <style>
@@ -223,26 +192,12 @@ page = st.sidebar.selectbox(
      "📅 Month Summary", "🔥 Brand-Month Matrix", "📂 Category Summary"]
 )
 
-# Add logout button in sidebar if authenticated
-if st.session_state.authenticated:
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🚪 Logout"):
-        st.session_state.authenticated = False
-        st.rerun()
-    st.sidebar.success("✅ Authenticated as Admin")
-
 # Remove emoji from page name for comparison
 page_clean = page.split(" ", 1)[1] if " " in page else page
 
 # Page 0: Dashboard
 if page_clean == "Dashboard":
     st.header("📊 Dashboard Overview")
-    
-    # Password protection
-    if not check_password():
-        st.warning("🔒 This page is protected. Please enter the admin password to access.")
-        st.info("💡 Only the **Add Expense** page is available without password.")
-        st.stop()
     
     df = get_all_expenses()
     
@@ -376,12 +331,6 @@ elif page_clean == "Add Expense":
 elif page_clean == "View All Expenses":
     st.header("📋 All Expenses")
     
-    # Password protection
-    if not check_password():
-        st.warning("🔒 This page is protected. Please enter the admin password to access.")
-        st.info("💡 Only the **Add Expense** page is available without password.")
-        st.stop()
-    
     df = get_all_expenses()
     
     if not df.empty:
@@ -479,12 +428,6 @@ elif page_clean == "View All Expenses":
 elif page_clean == "Brand Summary":
     st.header("🏢 Brand-wise Summary")
     
-    # Password protection
-    if not check_password():
-        st.warning("🔒 This page is protected. Please enter the admin password to access.")
-        st.info("💡 Only the **Add Expense** page is available without password.")
-        st.stop()
-    
     df = get_brand_summary()
     
     if not df.empty:
@@ -549,12 +492,6 @@ elif page_clean == "Brand Summary":
 # Page 4: Month Summary
 elif page_clean == "Month Summary":
     st.header("📅 Month-wise Summary")
-    
-    # Password protection
-    if not check_password():
-        st.warning("🔒 This page is protected. Please enter the admin password to access.")
-        st.info("💡 Only the **Add Expense** page is available without password.")
-        st.stop()
     
     df = get_month_summary()
     
@@ -646,12 +583,6 @@ elif page_clean == "Month Summary":
 elif page_clean == "Brand-Month Matrix":
     st.header("🔥 Brand vs Month Matrix")
     
-    # Password protection
-    if not check_password():
-        st.warning("🔒 This page is protected. Please enter the admin password to access.")
-        st.info("💡 Only the **Add Expense** page is available without password.")
-        st.stop()
-    
     df = get_brand_month_matrix()
     
     if not df.empty:
@@ -688,12 +619,6 @@ elif page_clean == "Brand-Month Matrix":
 # Page 6: Category Summary
 elif page_clean == "Category Summary":
     st.header("📂 Category-wise Summary")
-    
-    # Password protection
-    if not check_password():
-        st.warning("🔒 This page is protected. Please enter the admin password to access.")
-        st.info("💡 Only the **Add Expense** page is available without password.")
-        st.stop()
     
     df = get_category_summary()
     
