@@ -13,9 +13,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# Database setup
+# Database setup with proper connection handling
+def get_connection():
+    """Get database connection with timeout"""
+    return sqlite3.connect('expenses.db', timeout=10.0, check_same_thread=False)
+
 def init_db():
-    conn = sqlite3.connect('expenses.db')
+    conn = get_connection()
     c = conn.cursor()
     
     # Main expenses table with approval workflow
@@ -90,157 +94,191 @@ STATUSES = ["Pending", "Approved", "Rejected", "Completed"]
 # Helper functions
 def add_quotation(date, brand, category, amount, description, requested_by):
     """Add new expense quotation (request)"""
-    conn = sqlite3.connect('expenses.db')
+    conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO expenses (date, brand, category, amount, description, requested_by, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'Pending')
-    ''', (date, brand, category, amount, description, requested_by))
-    conn.commit()
-    expense_id = c.lastrowid
-    conn.close()
-    return expense_id
+    try:
+        c.execute('''
+            INSERT INTO expenses (date, brand, category, amount, description, requested_by, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'Pending')
+        ''', (date, brand, category, amount, description, requested_by))
+        conn.commit()
+        expense_id = c.lastrowid
+        return expense_id
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 def get_all_expenses(status_filter=None):
     """Get all expenses with optional status filter"""
-    conn = sqlite3.connect('expenses.db')
-    if status_filter and status_filter != "All":
-        df = pd.read_sql_query(
-            "SELECT * FROM expenses WHERE status = ? ORDER BY created_at DESC", 
-            conn, 
-            params=(status_filter,)
-        )
-    else:
-        df = pd.read_sql_query("SELECT * FROM expenses ORDER BY created_at DESC", conn)
-    conn.close()
-    return df
+    conn = get_connection()
+    try:
+        if status_filter and status_filter != "All":
+            df = pd.read_sql_query(
+                "SELECT * FROM expenses WHERE status = ? ORDER BY created_at DESC", 
+                conn, 
+                params=(status_filter,)
+            )
+        else:
+            df = pd.read_sql_query("SELECT * FROM expenses ORDER BY created_at DESC", conn)
+        return df
+    finally:
+        conn.close()
 
 def get_pending_approvals():
     """Get all pending approval requests"""
-    conn = sqlite3.connect('expenses.db')
-    df = pd.read_sql_query(
-        "SELECT * FROM expenses WHERE status = 'Pending' ORDER BY created_at DESC", 
-        conn
-    )
-    conn.close()
-    return df
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query(
+            "SELECT * FROM expenses WHERE status = 'Pending' ORDER BY created_at DESC", 
+            conn
+        )
+        return df
+    finally:
+        conn.close()
 
 def get_approved_without_invoice():
     """Get approved expenses that need invoice"""
-    conn = sqlite3.connect('expenses.db')
-    df = pd.read_sql_query(
-        "SELECT * FROM expenses WHERE status = 'Approved' ORDER BY approval_date DESC", 
-        conn
-    )
-    conn.close()
-    return df
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query(
+            "SELECT * FROM expenses WHERE status = 'Approved' ORDER BY approval_date DESC", 
+            conn
+        )
+        return df
+    finally:
+        conn.close()
 
 def approve_expense(expense_id, approved_by):
     """Approve an expense request"""
-    conn = sqlite3.connect('expenses.db')
+    conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        UPDATE expenses 
-        SET status = 'Approved', 
-            approved_by = ?, 
-            approval_date = ?,
-            updated_at = ?
-        WHERE id = ?
-    ''', (approved_by, datetime.now(), datetime.now(), expense_id))
-    conn.commit()
-    conn.close()
+    try:
+        c.execute('''
+            UPDATE expenses 
+            SET status = 'Approved', 
+                approved_by = ?, 
+                approval_date = ?,
+                updated_at = ?
+            WHERE id = ?
+        ''', (approved_by, datetime.now(), datetime.now(), expense_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 def reject_expense(expense_id, approved_by, reason):
     """Reject an expense request"""
-    conn = sqlite3.connect('expenses.db')
+    conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        UPDATE expenses 
-        SET status = 'Rejected', 
-            approved_by = ?, 
-            approval_date = ?,
-            rejection_reason = ?,
-            updated_at = ?
-        WHERE id = ?
-    ''', (approved_by, datetime.now(), reason, datetime.now(), expense_id))
-    conn.commit()
-    conn.close()
+    try:
+        c.execute('''
+            UPDATE expenses 
+            SET status = 'Rejected', 
+                approved_by = ?, 
+                approval_date = ?,
+                rejection_reason = ?,
+                updated_at = ?
+            WHERE id = ?
+        ''', (approved_by, datetime.now(), reason, datetime.now(), expense_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 def add_invoice_and_receipt(expense_id, invoice_number, invoice_date, receipt_image, receipt_filename):
     """Add invoice details and receipt image to approved expense"""
-    conn = sqlite3.connect('expenses.db')
+    conn = get_connection()
     c = conn.cursor()
     
-    # Convert image to binary
-    if receipt_image:
-        img_byte_arr = io.BytesIO()
-        receipt_image.save(img_byte_arr, format=receipt_image.format)
-        img_binary = img_byte_arr.getvalue()
-    else:
-        img_binary = None
-    
-    c.execute('''
-        UPDATE expenses 
-        SET status = 'Completed',
-            invoice_number = ?,
-            invoice_date = ?,
-            receipt_image = ?,
-            receipt_filename = ?,
-            updated_at = ?
-        WHERE id = ?
-    ''', (invoice_number, invoice_date, img_binary, receipt_filename, datetime.now(), expense_id))
-    conn.commit()
-    conn.close()
+    try:
+        # Convert image to binary
+        if receipt_image:
+            img_byte_arr = io.BytesIO()
+            receipt_image.save(img_byte_arr, format=receipt_image.format)
+            img_binary = img_byte_arr.getvalue()
+        else:
+            img_binary = None
+        
+        c.execute('''
+            UPDATE expenses 
+            SET status = 'Completed',
+                invoice_number = ?,
+                invoice_date = ?,
+                receipt_image = ?,
+                receipt_filename = ?,
+                updated_at = ?
+            WHERE id = ?
+        ''', (invoice_number, invoice_date, img_binary, receipt_filename, datetime.now(), expense_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 def get_expense_by_id(expense_id):
     """Get single expense details"""
-    conn = sqlite3.connect('expenses.db')
-    df = pd.read_sql_query("SELECT * FROM expenses WHERE id = ?", conn, params=(expense_id,))
-    conn.close()
-    if not df.empty:
-        return df.iloc[0]
-    return None
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query("SELECT * FROM expenses WHERE id = ?", conn, params=(expense_id,))
+        if not df.empty:
+            return df.iloc[0]
+        return None
+    finally:
+        conn.close()
 
 def get_receipt_image(expense_id):
     """Get receipt image for an expense"""
-    conn = sqlite3.connect('expenses.db')
+    conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT receipt_image, receipt_filename FROM expenses WHERE id = ?", (expense_id,))
-    result = c.fetchone()
-    conn.close()
-    return result
+    try:
+        c.execute("SELECT receipt_image, receipt_filename FROM expenses WHERE id = ?", (expense_id,))
+        result = c.fetchone()
+        return result
+    finally:
+        conn.close()
 
 def get_summary_by_status():
     """Get summary grouped by status"""
-    conn = sqlite3.connect('expenses.db')
-    query = """
-        SELECT 
-            status,
-            COUNT(*) as count,
-            SUM(amount) as total_amount
-        FROM expenses
-        GROUP BY status
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
+    conn = get_connection()
+    try:
+        query = """
+            SELECT 
+                status,
+                COUNT(*) as count,
+                SUM(amount) as total_amount
+            FROM expenses
+            GROUP BY status
+        """
+        df = pd.read_sql_query(query, conn)
+        return df
+    finally:
+        conn.close()
 
 def get_brand_summary(status_filter="Completed"):
     """Get brand-wise summary for completed expenses"""
-    conn = sqlite3.connect('expenses.db')
-    query = """
-        SELECT 
-            brand,
-            SUM(amount) as total_amount,
-            COUNT(*) as transaction_count
-        FROM expenses
-        WHERE status = ?
-        GROUP BY brand
-        ORDER BY total_amount DESC
-    """
-    df = pd.read_sql_query(query, conn, params=(status_filter,))
-    conn.close()
-    return df
+    conn = get_connection()
+    try:
+        query = """
+            SELECT 
+                brand,
+                SUM(amount) as total_amount,
+                COUNT(*) as transaction_count
+            FROM expenses
+            WHERE status = ?
+            GROUP BY brand
+            ORDER BY total_amount DESC
+        """
+        df = pd.read_sql_query(query, conn, params=(status_filter,))
+        return df
+    finally:
+        conn.close()
 
 def to_excel(df):
     """Convert dataframe to Excel"""
