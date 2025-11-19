@@ -96,39 +96,6 @@ def get_brand_summary():
     conn.close()
     return df
 
-def get_month_summary():
-    conn = sqlite3.connect('expenses.db')
-    query = """
-        SELECT strftime('%Y-%m', date) as month,
-               SUM(amount) as total_amount,
-               COUNT(*) as transaction_count
-        FROM expenses
-        GROUP BY strftime('%Y-%m', date)
-        ORDER BY month DESC
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
-
-def get_brand_month_matrix():
-    conn = sqlite3.connect('expenses.db')
-    query = """
-        SELECT brand,
-               strftime('%Y-%m', date) as month,
-               SUM(amount) as amount
-        FROM expenses
-        GROUP BY brand, strftime('%Y-%m', date)
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    
-    if not df.empty:
-        pivot_df = df.pivot(index='brand', columns='month', values='amount')
-        pivot_df = pivot_df.fillna(0)
-        pivot_df['Total'] = pivot_df.sum(axis=1)
-        return pivot_df
-    return pd.DataFrame()
-
 def get_category_summary():
     conn = sqlite3.connect('expenses.db')
     query = """
@@ -188,15 +155,41 @@ st.markdown("---")
 # Sidebar for navigation
 page = st.sidebar.selectbox(
     "📌 Navigation",
-    ["➕ Add Expense", "📊 Dashboard", "📋 View All Expenses", "🏢 Brand Summary", 
-     "📅 Month Summary", "🔥 Brand-Month Matrix", "📂 Category Summary"]
+    ["➕ Add Expense", "📊 Dashboard", "📋 View All Expenses"]
 )
 
 # Remove emoji from page name for comparison
 page_clean = page.split(" ", 1)[1] if " " in page else page
 
-# Page 0: Dashboard
-if page_clean == "Dashboard":
+# Page 1: Add Expense
+if page_clean == "Add Expense":
+    st.header("➕ Add New Expense")
+    
+    with st.form("expense_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            expense_date = st.date_input("📅 Date", value=date.today())
+            brand = st.selectbox("🏢 Brand", BRANDS)
+            category = st.selectbox("📂 Category", CATEGORIES)
+        
+        with col2:
+            amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
+            added_by = st.text_input("👤 Added By", placeholder="Your name")
+        
+        description = st.text_area("📝 Description", placeholder="Enter expense details...")
+        
+        submitted = st.form_submit_button("✅ Add Expense", use_container_width=True, type="primary")
+        
+        if submitted:
+            if amount > 0 and added_by:
+                add_expense(expense_date, brand, category, amount, description, added_by)
+                st.toast(f"✅ Expense of ₹{amount:,.2f} added successfully for {brand}!", icon="✅")
+            else:
+                st.error("⚠️ Please enter amount and your name!")
+
+# Page 2: Dashboard
+elif page_clean == "Dashboard":
     st.header("📊 Dashboard Overview")
     
     df = get_all_expenses()
@@ -299,34 +292,7 @@ if page_clean == "Dashboard":
         st.markdown("2. Add expenses for different brands and categories")
         st.markdown("3. Return to this dashboard to see visualizations")
 
-# Page 1: Add Expense
-elif page_clean == "Add Expense":
-    st.header("➕ Add New Expense")
-    
-    with st.form("expense_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            expense_date = st.date_input("📅 Date", value=date.today())
-            brand = st.selectbox("🏢 Brand", BRANDS)
-            category = st.selectbox("📂 Category", CATEGORIES)
-        
-        with col2:
-            amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
-            added_by = st.text_input("👤 Added By", placeholder="Your name")
-        
-        description = st.text_area("📝 Description", placeholder="Enter expense details...")
-        
-        submitted = st.form_submit_button("✅ Add Expense", use_container_width=True, type="primary")
-        
-        if submitted:
-            if amount > 0 and added_by:
-                add_expense(expense_date, brand, category, amount, description, added_by)
-                st.toast(f"✅ Expense of ₹{amount:,.2f} added successfully for {brand}!", icon="✅")
-            else:
-                st.error("⚠️ Please enter amount and your name!")
-
-# Page 2: View All Expenses
+# Page 3: View All Expenses
 elif page_clean == "View All Expenses":
     st.header("📋 All Expenses")
     
@@ -422,285 +388,6 @@ elif page_clean == "View All Expenses":
     
     else:
         st.info("📌 No expenses recorded yet. Add your first expense!")
-
-# Page 3: Brand Summary
-elif page_clean == "Brand Summary":
-    st.header("🏢 Brand-wise Summary")
-    
-    df = get_brand_summary()
-    
-    if not df.empty:
-        # Charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📊 Brand Expenses - Bar Chart")
-            fig_bar = px.bar(
-                df,
-                x='brand',
-                y='total_amount',
-                color='total_amount',
-                labels={'total_amount': 'Total Amount (₹)', 'brand': 'Brand'},
-                color_continuous_scale='Viridis',
-                text='total_amount'
-            )
-            fig_bar.update_traces(texttemplate='₹%{text:,.0f}', textposition='outside')
-            fig_bar.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig_bar, use_container_width=True)
-        
-        with col2:
-            st.subheader("🍰 Brand Expenses - Pie Chart")
-            fig_pie = px.pie(
-                df,
-                values='total_amount',
-                names='brand',
-                hole=0.3
-            )
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_pie, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Data table
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("📋 Brand Expenses Data")
-            display_df = df.copy()
-            display_df['total_amount'] = display_df['total_amount'].apply(lambda x: f"₹{x:,.2f}")
-            display_df['percentage'] = (df['total_amount'] / df['total_amount'].sum() * 100).apply(lambda x: f"{x:.1f}%")
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-        with col2:
-            st.subheader("💰 Total")
-            total = df['total_amount'].sum()
-            st.metric("Grand Total", f"₹{total:,.2f}")
-            st.metric("Number of Brands", len(df))
-        
-        # Export
-        excel_data = to_excel(df)
-        st.download_button(
-            label="📥 Download Brand Summary",
-            data=excel_data,
-            file_name=f"brand_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("📌 No data available yet.")
-
-# Page 4: Month Summary
-elif page_clean == "Month Summary":
-    st.header("📅 Month-wise Summary")
-    
-    df = get_month_summary()
-    
-    if not df.empty:
-        df_sorted = df.sort_values('month')
-        
-        # Charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📈 Monthly Trend - Line Chart")
-            fig_line = px.line(
-                df_sorted,
-                x='month',
-                y='total_amount',
-                markers=True,
-                labels={'total_amount': 'Total Amount (₹)', 'month': 'Month'}
-            )
-            fig_line.update_traces(
-                line_color='#2ecc71', 
-                line_width=3, 
-                marker=dict(size=10, color='#2ecc71')
-            )
-            fig_line.update_layout(height=400)
-            st.plotly_chart(fig_line, use_container_width=True)
-        
-        with col2:
-            st.subheader("📊 Monthly Trend - Bar Chart")
-            fig_bar = px.bar(
-                df_sorted,
-                x='month',
-                y='total_amount',
-                color='total_amount',
-                labels={'total_amount': 'Total Amount (₹)', 'month': 'Month'},
-                color_continuous_scale='Blues',
-                text='total_amount'
-            )
-            fig_bar.update_traces(texttemplate='₹%{text:,.0f}', textposition='outside')
-            fig_bar.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig_bar, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Area chart
-        st.subheader("📉 Cumulative Monthly Expenses")
-        df_sorted['cumulative_amount'] = df_sorted['total_amount'].cumsum()
-        fig_area = px.area(
-            df_sorted,
-            x='month',
-            y='cumulative_amount',
-            labels={'cumulative_amount': 'Cumulative Amount (₹)', 'month': 'Month'}
-        )
-        fig_area.update_traces(line_color='#e74c3c', fillcolor='rgba(231,76,60,0.3)')
-        st.plotly_chart(fig_area, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Data table
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("📋 Monthly Expenses Data")
-            display_df = df.copy()
-            display_df['total_amount'] = display_df['total_amount'].apply(lambda x: f"₹{x:,.2f}")
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-        with col2:
-            st.subheader("💰 Statistics")
-            total = df['total_amount'].sum()
-            avg = df['total_amount'].mean()
-            max_month = df.loc[df['total_amount'].idxmax()]
-            
-            st.metric("Grand Total", f"₹{total:,.2f}")
-            st.metric("Monthly Average", f"₹{avg:,.2f}")
-            st.metric("Highest Month", max_month['month'])
-        
-        # Export
-        excel_data = to_excel(df)
-        st.download_button(
-            label="📥 Download Month Summary",
-            data=excel_data,
-            file_name=f"month_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("📌 No data available yet.")
-
-# Page 5: Brand-Month Matrix
-elif page_clean == "Brand-Month Matrix":
-    st.header("🔥 Brand vs Month Matrix")
-    
-    df = get_brand_month_matrix()
-    
-    if not df.empty:
-        # Data table only
-        st.subheader("📋 Consolidated View")
-        display_df = df.copy()
-        for col in display_df.columns:
-            display_df[col] = display_df[col].apply(lambda x: f"₹{x:,.0f}")
-        st.dataframe(display_df, use_container_width=True)
-        
-        # Summary metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            total_all = df['Total'].sum()
-            st.metric("Grand Total", f"₹{total_all:,.2f}")
-        with col2:
-            avg_brand = df['Total'].mean()
-            st.metric("Average per Brand", f"₹{avg_brand:,.2f}")
-        with col3:
-            top_brand = df['Total'].idxmax()
-            st.metric("Top Brand", top_brand)
-        
-        # Export
-        excel_data = to_excel(df)
-        st.download_button(
-            label="📥 Download Matrix",
-            data=excel_data,
-            file_name=f"brand_month_matrix_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("📌 No data available yet.")
-
-# Page 6: Category Summary
-elif page_clean == "Category Summary":
-    st.header("📂 Category-wise Summary")
-    
-    df = get_category_summary()
-    
-    if not df.empty:
-        # Charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📊 Category Expenses - Bar Chart")
-            fig_bar = px.bar(
-                df,
-                x='category',
-                y='total_amount',
-                color='total_amount',
-                labels={'total_amount': 'Total Amount (₹)', 'category': 'Category'},
-                color_continuous_scale='Oranges',
-                text='total_amount'
-            )
-            fig_bar.update_traces(texttemplate='₹%{text:,.0f}', textposition='outside')
-            fig_bar.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig_bar, use_container_width=True)
-        
-        with col2:
-            st.subheader("🍩 Category Expenses - Donut Chart")
-            fig_donut = px.pie(
-                df,
-                values='total_amount',
-                names='category',
-                hole=0.5
-            )
-            fig_donut.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_donut, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Horizontal bar chart
-        st.subheader("📈 Category Expenses - Horizontal View")
-        fig_h_bar = px.bar(
-            df.sort_values('total_amount'),
-            x='total_amount',
-            y='category',
-            orientation='h',
-            color='total_amount',
-            labels={'total_amount': 'Total Amount (₹)', 'category': 'Category'},
-            color_continuous_scale='Teal',
-            text='total_amount'
-        )
-        fig_h_bar.update_traces(texttemplate='₹%{text:,.0f}', textposition='outside')
-        fig_h_bar.update_layout(showlegend=False, height=500)
-        st.plotly_chart(fig_h_bar, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Data table
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("📋 Category Expenses Data")
-            display_df = df.copy()
-            display_df['total_amount'] = display_df['total_amount'].apply(lambda x: f"₹{x:,.2f}")
-            display_df['percentage'] = (df['total_amount'] / df['total_amount'].sum() * 100).apply(lambda x: f"{x:.1f}%")
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-        with col2:
-            st.subheader("💰 Statistics")
-            total = df['total_amount'].sum()
-            top_category = df.iloc[0]
-            
-            st.metric("Grand Total", f"₹{total:,.2f}")
-            st.metric("Categories", len(df))
-            st.metric("Top Category", top_category['category'])
-            st.metric("Top Amount", f"₹{top_category['total_amount']:,.2f}")
-        
-        # Export
-        excel_data = to_excel(df)
-        st.download_button(
-            label="📥 Download Category Summary",
-            data=excel_data,
-            file_name=f"category_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("📌 No data available yet.")
 
 # Footer
 st.markdown("---")
