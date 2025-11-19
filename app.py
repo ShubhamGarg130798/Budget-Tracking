@@ -253,44 +253,20 @@ if page_clean == "Dashboard":
         
         st.markdown("---")
         
-        # Row 2: Time-based Charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📈 Monthly Expense Trend")
-            month_summary = get_month_summary()
-            if not month_summary.empty:
-                month_summary = month_summary.sort_values('month')
-                fig_monthly = px.line(
-                    month_summary,
-                    x='month',
-                    y='total_amount',
-                    title='',
-                    labels={'total_amount': 'Total Amount (₹)', 'month': 'Month'},
-                    markers=True
-                )
-                fig_monthly.update_traces(
-                    line_color='#1f77b4', 
-                    line_width=3,
-                    marker=dict(size=10, color='#1f77b4')
-                )
-                fig_monthly.update_layout(height=400)
-                st.plotly_chart(fig_monthly, use_container_width=True)
-        
-        with col2:
-            st.subheader("📉 Daily Expense Pattern")
-            daily_summary = get_daily_expenses()
-            if not daily_summary.empty:
-                fig_daily = px.area(
-                    daily_summary,
-                    x='date',
-                    y='total_amount',
-                    title='',
-                    labels={'total_amount': 'Total Amount (₹)', 'date': 'Date'}
-                )
-                fig_daily.update_traces(line_color='#ff7f0e', fillcolor='rgba(255,127,14,0.3)')
-                fig_daily.update_layout(height=400)
-                st.plotly_chart(fig_daily, use_container_width=True)
+        # Row 2: Daily Expense Pattern
+        st.subheader("📉 Daily Expense Pattern")
+        daily_summary = get_daily_expenses()
+        if not daily_summary.empty:
+            fig_daily = px.area(
+                daily_summary,
+                x='date',
+                y='total_amount',
+                title='',
+                labels={'total_amount': 'Total Amount (₹)', 'date': 'Date'}
+            )
+            fig_daily.update_traces(line_color='#ff7f0e', fillcolor='rgba(255,127,14,0.3)')
+            fig_daily.update_layout(height=400)
+            st.plotly_chart(fig_daily, use_container_width=True)
         
         st.markdown("---")
         
