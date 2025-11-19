@@ -63,7 +63,7 @@ st.markdown("""
 USER_ROLES = {
     # Brand Heads - Stage 1 Approvers
     "brand_heads": {
-        "users": ["Rahul", "Priya", "Amit", "Neha", "Vikram"],
+        "users": ["Swati", "Ashutosh"],
         "stage": 1,
         "title": "Brand Head"
     },
@@ -75,7 +75,7 @@ USER_ROLES = {
     },
     # Accounts Team - Stage 3 (Payment)
     "accounts_team": {
-        "users": ["Accounts", "Shubham", "Finance Team", "Rajesh"],
+        "users": ["Hansi", "Accounts", "Shubham", "Finance Team"],
         "stage": 3,
         "title": "Accounts Team"
     },
@@ -406,9 +406,9 @@ if not st.session_state.logged_in:
     st.markdown("---")
     st.info("""
     **👥 Registered Users:**
-    - **Brand Heads:** Rahul, Priya, Amit, Neha, Vikram
+    - **Brand Heads:** Swati, Ashutosh
     - **Senior Manager:** Shruti Ma'am
-    - **Accounts Team:** Shubham, Rajesh, Accounts, Finance Team
+    - **Accounts Team:** Hansi, Shubham, Accounts, Finance Team
     - **Admin:** Admin, Shubham
     """)
     st.stop()
