@@ -62,7 +62,7 @@ BRANDS = [
 # Expense categories
 CATEGORIES = [
     "Marketing", "Operations", "Salaries", "Technology", "Office Rent",
-    "Utilities", "Travel", "Professional Fees", "Commission", "Interest", "Other"
+    "Utilities", "Travel", "Professional Fees", "Commission", "Interest","Petty Cash", "Other"
 ]
 
 # Helper functions
