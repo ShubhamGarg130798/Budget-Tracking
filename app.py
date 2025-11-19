@@ -4,7 +4,6 @@ import pandas as pd
 from datetime import datetime, date
 import io
 from PIL import Image
-import base64
 
 # Page configuration
 st.set_page_config(
@@ -13,43 +12,56 @@ st.set_page_config(
     layout="wide"
 )
 
-# Database setup with proper connection handling
+# Database setup with WAL mode for better concurrency
 def get_connection():
-    """Get database connection with timeout"""
-    return sqlite3.connect('expenses.db', timeout=10.0, check_same_thread=False)
+    """Get database connection with timeout and WAL mode"""
+    conn = sqlite3.connect('expenses.db', timeout=30.0, check_same_thread=False, isolation_level=None)
+    conn.execute('PRAGMA journal_mode=WAL')  # Write-Ahead Logging for better concurrency
+    return conn
 
 def init_db():
-    conn = get_connection()
-    c = conn.cursor()
-    
-    # Main expenses table with approval workflow
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date DATE NOT NULL,
-            brand TEXT NOT NULL,
-            category TEXT NOT NULL,
-            amount REAL NOT NULL,
-            description TEXT,
-            requested_by TEXT,
-            status TEXT DEFAULT 'Pending',
-            approved_by TEXT,
-            approval_date TIMESTAMP,
-            rejection_reason TEXT,
-            invoice_number TEXT,
-            invoice_date DATE,
-            receipt_image BLOB,
-            receipt_filename TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
+    """Initialize database with proper error handling"""
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        
+        # Main expenses table with approval workflow
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date DATE NOT NULL,
+                brand TEXT NOT NULL,
+                category TEXT NOT NULL,
+                amount REAL NOT NULL,
+                description TEXT,
+                requested_by TEXT,
+                status TEXT DEFAULT 'Pending',
+                approved_by TEXT,
+                approval_date TIMESTAMP,
+                rejection_reason TEXT,
+                invoice_number TEXT,
+                invoice_date DATE,
+                receipt_image BLOB,
+                receipt_filename TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Database initialization error: {str(e)}")
+        return False
 
-# Initialize database
-init_db()
+# Initialize database once per session
+if 'db_initialized' not in st.session_state:
+    if init_db():
+        st.session_state.db_initialized = True
+    else:
+        st.error("Failed to initialize database. Please refresh the page.")
+        st.stop()
 
 # Brand list
 BRANDS = [
@@ -91,29 +103,28 @@ CATEGORIES = [
 # Status types
 STATUSES = ["Pending", "Approved", "Rejected", "Completed"]
 
-# Helper functions
+# Helper functions with improved error handling
 def add_quotation(date, brand, category, amount, description, requested_by):
     """Add new expense quotation (request)"""
-    conn = get_connection()
-    c = conn.cursor()
     try:
+        conn = get_connection()
+        c = conn.cursor()
+        
         c.execute('''
             INSERT INTO expenses (date, brand, category, amount, description, requested_by, status)
             VALUES (?, ?, ?, ?, ?, ?, 'Pending')
-        ''', (date, brand, category, amount, description, requested_by))
-        conn.commit()
+        ''', (str(date), brand, category, float(amount), description, requested_by))
+        
         expense_id = c.lastrowid
-        return expense_id
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
         conn.close()
+        return expense_id, None
+    except Exception as e:
+        return None, str(e)
 
 def get_all_expenses(status_filter=None):
     """Get all expenses with optional status filter"""
-    conn = get_connection()
     try:
+        conn = get_connection()
         if status_filter and status_filter != "All":
             df = pd.read_sql_query(
                 "SELECT * FROM expenses WHERE status = ? ORDER BY created_at DESC", 
@@ -122,39 +133,45 @@ def get_all_expenses(status_filter=None):
             )
         else:
             df = pd.read_sql_query("SELECT * FROM expenses ORDER BY created_at DESC", conn)
-        return df
-    finally:
         conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error loading expenses: {str(e)}")
+        return pd.DataFrame()
 
 def get_pending_approvals():
     """Get all pending approval requests"""
-    conn = get_connection()
     try:
+        conn = get_connection()
         df = pd.read_sql_query(
             "SELECT * FROM expenses WHERE status = 'Pending' ORDER BY created_at DESC", 
             conn
         )
-        return df
-    finally:
         conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error loading pending approvals: {str(e)}")
+        return pd.DataFrame()
 
 def get_approved_without_invoice():
     """Get approved expenses that need invoice"""
-    conn = get_connection()
     try:
+        conn = get_connection()
         df = pd.read_sql_query(
             "SELECT * FROM expenses WHERE status = 'Approved' ORDER BY approval_date DESC", 
             conn
         )
-        return df
-    finally:
         conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error loading approved expenses: {str(e)}")
+        return pd.DataFrame()
 
 def approve_expense(expense_id, approved_by):
     """Approve an expense request"""
-    conn = get_connection()
-    c = conn.cursor()
     try:
+        conn = get_connection()
+        c = conn.cursor()
         c.execute('''
             UPDATE expenses 
             SET status = 'Approved', 
@@ -163,18 +180,16 @@ def approve_expense(expense_id, approved_by):
                 updated_at = ?
             WHERE id = ?
         ''', (approved_by, datetime.now(), datetime.now(), expense_id))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
         conn.close()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 def reject_expense(expense_id, approved_by, reason):
     """Reject an expense request"""
-    conn = get_connection()
-    c = conn.cursor()
     try:
+        conn = get_connection()
+        c = conn.cursor()
         c.execute('''
             UPDATE expenses 
             SET status = 'Rejected', 
@@ -184,19 +199,17 @@ def reject_expense(expense_id, approved_by, reason):
                 updated_at = ?
             WHERE id = ?
         ''', (approved_by, datetime.now(), reason, datetime.now(), expense_id))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
         conn.close()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 def add_invoice_and_receipt(expense_id, invoice_number, invoice_date, receipt_image, receipt_filename):
     """Add invoice details and receipt image to approved expense"""
-    conn = get_connection()
-    c = conn.cursor()
-    
     try:
+        conn = get_connection()
+        c = conn.cursor()
+        
         # Convert image to binary
         if receipt_image:
             img_byte_arr = io.BytesIO()
@@ -214,40 +227,42 @@ def add_invoice_and_receipt(expense_id, invoice_number, invoice_date, receipt_im
                 receipt_filename = ?,
                 updated_at = ?
             WHERE id = ?
-        ''', (invoice_number, invoice_date, img_binary, receipt_filename, datetime.now(), expense_id))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
+        ''', (invoice_number, str(invoice_date), img_binary, receipt_filename, datetime.now(), expense_id))
         conn.close()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 def get_expense_by_id(expense_id):
     """Get single expense details"""
-    conn = get_connection()
     try:
+        conn = get_connection()
         df = pd.read_sql_query("SELECT * FROM expenses WHERE id = ?", conn, params=(expense_id,))
+        conn.close()
         if not df.empty:
             return df.iloc[0]
         return None
-    finally:
-        conn.close()
+    except Exception as e:
+        st.error(f"Error loading expense: {str(e)}")
+        return None
 
 def get_receipt_image(expense_id):
     """Get receipt image for an expense"""
-    conn = get_connection()
-    c = conn.cursor()
     try:
+        conn = get_connection()
+        c = conn.cursor()
         c.execute("SELECT receipt_image, receipt_filename FROM expenses WHERE id = ?", (expense_id,))
         result = c.fetchone()
-        return result
-    finally:
         conn.close()
+        return result
+    except Exception as e:
+        st.error(f"Error loading receipt: {str(e)}")
+        return None
 
 def get_summary_by_status():
     """Get summary grouped by status"""
-    conn = get_connection()
     try:
+        conn = get_connection()
         query = """
             SELECT 
                 status,
@@ -257,14 +272,16 @@ def get_summary_by_status():
             GROUP BY status
         """
         df = pd.read_sql_query(query, conn)
-        return df
-    finally:
         conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error loading summary: {str(e)}")
+        return pd.DataFrame()
 
 def get_brand_summary(status_filter="Completed"):
     """Get brand-wise summary for completed expenses"""
-    conn = get_connection()
     try:
+        conn = get_connection()
         query = """
             SELECT 
                 brand,
@@ -276,9 +293,11 @@ def get_brand_summary(status_filter="Completed"):
             ORDER BY total_amount DESC
         """
         df = pd.read_sql_query(query, conn, params=(status_filter,))
-        return df
-    finally:
         conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error loading brand summary: {str(e)}")
+        return pd.DataFrame()
 
 def to_excel(df):
     """Convert dataframe to Excel"""
@@ -325,13 +344,18 @@ if page == "📝 Submit Quotation":
         submitted = st.form_submit_button("Submit for Approval", use_container_width=True, type="primary")
         
         if submitted:
-            if amount > 0 and requested_by:
-                expense_id = add_quotation(expense_date, brand, category, amount, description, requested_by)
-                st.success(f"✅ Quotation #{expense_id} submitted for approval!")
-                st.info(f"📋 Expense of ₹{amount:,.2f} for {brand} is now pending approval.")
-                st.balloons()
+            if amount > 0 and requested_by.strip():
+                with st.spinner("Submitting quotation..."):
+                    expense_id, error = add_quotation(expense_date, brand, category, amount, description, requested_by)
+                    if expense_id:
+                        st.success(f"✅ Quotation #{expense_id} submitted for approval!")
+                        st.info(f"📋 Expense of ₹{amount:,.2f} for {brand} is now pending approval.")
+                        st.balloons()
+                    else:
+                        st.error(f"❌ Error submitting quotation: {error}")
+                        st.info("💡 Tip: Try refreshing the page or contact support if this persists.")
             else:
-                st.error("Please enter amount and your name!")
+                st.error("⚠️ Please enter amount and your name!")
 
 # Page 2: Pending Approvals (For Managers)
 elif page == "⏳ Pending Approvals":
@@ -368,20 +392,26 @@ elif page == "⏳ Pending Approvals":
                 with col_approve:
                     approver_name = st.text_input(f"Your Name (Approver)", key=f"approver_{row['id']}")
                     if st.button(f"✅ Approve", key=f"approve_{row['id']}", type="primary"):
-                        if approver_name:
-                            approve_expense(row['id'], approver_name)
-                            st.success(f"✅ Approved! Expense #{row['id']} can now proceed to invoice.")
-                            st.rerun()
+                        if approver_name.strip():
+                            success, error = approve_expense(row['id'], approver_name)
+                            if success:
+                                st.success(f"✅ Approved! Expense #{row['id']} can now proceed to invoice.")
+                                st.rerun()
+                            else:
+                                st.error(f"Error approving: {error}")
                         else:
                             st.error("Please enter your name")
                 
                 with col_reject:
                     rejection_reason = st.text_input(f"Rejection Reason", key=f"reason_{row['id']}")
                     if st.button(f"❌ Reject", key=f"reject_{row['id']}", type="secondary"):
-                        if approver_name and rejection_reason:
-                            reject_expense(row['id'], approver_name, rejection_reason)
-                            st.warning(f"❌ Rejected! Expense #{row['id']} has been declined.")
-                            st.rerun()
+                        if approver_name.strip() and rejection_reason.strip():
+                            success, error = reject_expense(row['id'], approver_name, rejection_reason)
+                            if success:
+                                st.warning(f"❌ Rejected! Expense #{row['id']} has been declined.")
+                                st.rerun()
+                            else:
+                                st.error(f"Error rejecting: {error}")
                         else:
                             st.error("Please enter your name and rejection reason")
     else:
@@ -409,60 +439,63 @@ elif page == "✅ Add Invoice & Receipt":
             expense_id = expense_options[selected_expense]
             expense = get_expense_by_id(expense_id)
             
-            # Show expense details
-            with st.expander("📄 Expense Details", expanded=True):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Date:** {expense['date']}")
-                    st.write(f"**Brand:** {expense['brand']}")
-                    st.write(f"**Category:** {expense['category']}")
-                    st.write(f"**Amount:** ₹{expense['amount']:,.2f}")
+            if expense is not None:
+                # Show expense details
+                with st.expander("📄 Expense Details", expanded=True):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"**Date:** {expense['date']}")
+                        st.write(f"**Brand:** {expense['brand']}")
+                        st.write(f"**Category:** {expense['category']}")
+                        st.write(f"**Amount:** ₹{expense['amount']:,.2f}")
+                    
+                    with col2:
+                        st.write(f"**Requested By:** {expense['requested_by']}")
+                        st.write(f"**Approved By:** {expense['approved_by']}")
+                        st.write(f"**Approval Date:** {expense['approval_date']}")
+                    
+                    st.write(f"**Description:** {expense['description']}")
                 
-                with col2:
-                    st.write(f"**Requested By:** {expense['requested_by']}")
-                    st.write(f"**Approved By:** {expense['approved_by']}")
-                    st.write(f"**Approval Date:** {expense['approval_date']}")
-                
-                st.write(f"**Description:** {expense['description']}")
-            
-            # Invoice form
-            st.markdown("---")
-            with st.form(f"invoice_form_{expense_id}"):
-                st.subheader("📝 Add Invoice Details")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    invoice_number = st.text_input("Invoice Number", placeholder="INV-2024-001")
-                with col2:
-                    invoice_date = st.date_input("Invoice Date", value=date.today())
-                
-                receipt_file = st.file_uploader(
-                    "Upload Receipt/Invoice Image", 
-                    type=['png', 'jpg', 'jpeg', 'pdf'],
-                    help="Upload a photo or PDF of the receipt/invoice"
-                )
-                
-                submit_invoice = st.form_submit_button("✅ Submit Invoice & Complete", type="primary")
-                
-                if submit_invoice:
-                    if invoice_number and receipt_file:
-                        # Process image
-                        if receipt_file.type in ['image/png', 'image/jpeg', 'image/jpg']:
-                            receipt_image = Image.open(receipt_file)
-                            add_invoice_and_receipt(
-                                expense_id, 
-                                invoice_number, 
-                                invoice_date, 
-                                receipt_image, 
-                                receipt_file.name
-                            )
-                            st.success(f"✅ Invoice added! Expense #{expense_id} is now COMPLETED!")
-                            st.balloons()
-                            st.rerun()
+                # Invoice form
+                st.markdown("---")
+                with st.form(f"invoice_form_{expense_id}"):
+                    st.subheader("📝 Add Invoice Details")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        invoice_number = st.text_input("Invoice Number", placeholder="INV-2024-001")
+                    with col2:
+                        invoice_date = st.date_input("Invoice Date", value=date.today())
+                    
+                    receipt_file = st.file_uploader(
+                        "Upload Receipt/Invoice Image", 
+                        type=['png', 'jpg', 'jpeg'],
+                        help="Upload a photo of the receipt/invoice"
+                    )
+                    
+                    submit_invoice = st.form_submit_button("✅ Submit Invoice & Complete", type="primary")
+                    
+                    if submit_invoice:
+                        if invoice_number.strip() and receipt_file:
+                            try:
+                                receipt_image = Image.open(receipt_file)
+                                success, error = add_invoice_and_receipt(
+                                    expense_id, 
+                                    invoice_number, 
+                                    invoice_date, 
+                                    receipt_image, 
+                                    receipt_file.name
+                                )
+                                if success:
+                                    st.success(f"✅ Invoice added! Expense #{expense_id} is now COMPLETED!")
+                                    st.balloons()
+                                    st.rerun()
+                                else:
+                                    st.error(f"Error adding invoice: {error}")
+                            except Exception as e:
+                                st.error(f"Error processing image: {str(e)}")
                         else:
-                            st.error("Please upload an image file (PNG/JPG)")
-                    else:
-                        st.error("Please provide invoice number and upload receipt image")
+                            st.error("Please provide invoice number and upload receipt image")
     else:
         st.info("📭 No approved expenses awaiting invoice. All completed!")
 
