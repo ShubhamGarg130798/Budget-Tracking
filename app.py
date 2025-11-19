@@ -429,6 +429,7 @@ with col2:
 st.markdown("---")
 
 # Sidebar for navigation based on role
+# Start with Add Expense as the first option for everyone
 page_options = ["➕ Add Expense"]
 
 # Add approval pages based on role
