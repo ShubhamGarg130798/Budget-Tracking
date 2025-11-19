@@ -156,18 +156,6 @@ def get_daily_expenses():
     conn.close()
     return df
 
-def get_brand_category_summary():
-    conn = sqlite3.connect('expenses.db')
-    query = """
-        SELECT brand, category,
-               SUM(amount) as total_amount
-        FROM expenses
-        GROUP BY brand, category
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
-
 def get_top_expenses(limit=10):
     conn = sqlite3.connect('expenses.db')
     query = f"""
@@ -327,48 +315,6 @@ if page_clean == "Dashboard":
                 st.metric("Highest Expense", f"₹{max_expense:,.2f}")
                 st.metric("Lowest Expense", f"₹{min_expense:,.2f}")
                 st.metric("Median Expense", f"₹{median_expense:,.2f}")
-        
-        st.markdown("---")
-        
-        # Row 4: Heatmap
-        st.subheader("🔥 Brand-Month Expense Heatmap")
-        matrix_df = get_brand_month_matrix()
-        if not matrix_df.empty:
-            # Remove 'Total' column for heatmap
-            heatmap_df = matrix_df.drop('Total', axis=1) if 'Total' in matrix_df.columns else matrix_df
-            
-            fig_heatmap = px.imshow(
-                heatmap_df,
-                labels=dict(x="Month", y="Brand", color="Amount (₹)"),
-                x=heatmap_df.columns,
-                y=heatmap_df.index,
-                color_continuous_scale='RdYlGn_r',
-                aspect="auto"
-            )
-            fig_heatmap.update_layout(height=500)
-            st.plotly_chart(fig_heatmap, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Row 5: Brand-Category Breakdown
-        st.subheader("🎯 Brand-Category Expense Breakdown (Top 8 Brands)")
-        brand_cat_summary = get_brand_category_summary()
-        if not brand_cat_summary.empty:
-            # Get top 8 brands
-            top_brands = get_brand_summary().head(8)['brand'].tolist()
-            filtered_brand_cat = brand_cat_summary[brand_cat_summary['brand'].isin(top_brands)]
-            
-            fig_stacked = px.bar(
-                filtered_brand_cat,
-                x='brand',
-                y='total_amount',
-                color='category',
-                title='',
-                labels={'total_amount': 'Total Amount (₹)', 'brand': 'Brand'},
-                barmode='stack'
-            )
-            fig_stacked.update_layout(height=400)
-            st.plotly_chart(fig_stacked, use_container_width=True)
         
     else:
         st.info("📌 No expenses recorded yet. Add your first expense to see the dashboard!")
@@ -540,22 +486,6 @@ elif page_clean == "Brand Summary":
         
         st.markdown("---")
         
-        # Treemap
-        st.subheader("🗺️ Brand Expenses - Treemap")
-        fig_treemap = px.treemap(
-            df,
-            path=['brand'],
-            values='total_amount',
-            color='total_amount',
-            color_continuous_scale='RdYlGn_r',
-            hover_data={'total_amount': ':,.2f'}
-        )
-        fig_treemap.update_layout(height=500)
-        fig_treemap.update_traces(texttemplate='<b>%{label}</b><br>₹%{value:,.0f}')
-        st.plotly_chart(fig_treemap, use_container_width=True)
-        
-        st.markdown("---")
-        
         # Data table
         col1, col2 = st.columns([2, 1])
         
@@ -680,60 +610,24 @@ elif page_clean == "Brand-Month Matrix":
     df = get_brand_month_matrix()
     
     if not df.empty:
-        # Heatmap
-        st.subheader("🌡️ Brand-Month Heatmap")
-        heatmap_df = df.drop('Total', axis=1) if 'Total' in df.columns else df
-        
-        fig_heatmap = px.imshow(
-            heatmap_df,
-            labels=dict(x="Month", y="Brand", color="Amount (₹)"),
-            x=heatmap_df.columns,
-            y=heatmap_df.index,
-            color_continuous_scale='YlOrRd',
-            aspect="auto"
-        )
-        fig_heatmap.update_layout(height=600)
-        st.plotly_chart(fig_heatmap, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Top brands by month chart
-        st.subheader("📊 Monthly Brand Comparison (Top 5 Brands)")
-        top_5_brands = df.nlargest(5, 'Total').index.tolist()
-        month_cols = [col for col in df.columns if col != 'Total']
-        
-        if month_cols:
-            comparison_df = df.loc[top_5_brands, month_cols].T
-            comparison_df.index.name = 'Month'
-            comparison_df = comparison_df.reset_index()
-            
-            fig_line_compare = go.Figure()
-            for brand in top_5_brands:
-                fig_line_compare.add_trace(go.Scatter(
-                    x=comparison_df['Month'],
-                    y=comparison_df[brand],
-                    mode='lines+markers',
-                    name=brand,
-                    line=dict(width=2),
-                    marker=dict(size=8)
-                ))
-            
-            fig_line_compare.update_layout(
-                xaxis_title='Month',
-                yaxis_title='Amount (₹)',
-                height=400,
-                hovermode='x unified'
-            )
-            st.plotly_chart(fig_line_compare, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Data table
+        # Data table only
         st.subheader("📋 Consolidated View")
         display_df = df.copy()
         for col in display_df.columns:
             display_df[col] = display_df[col].apply(lambda x: f"₹{x:,.0f}")
         st.dataframe(display_df, use_container_width=True)
+        
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            total_all = df['Total'].sum()
+            st.metric("Grand Total", f"₹{total_all:,.2f}")
+        with col2:
+            avg_brand = df['Total'].mean()
+            st.metric("Average per Brand", f"₹{avg_brand:,.2f}")
+        with col3:
+            top_brand = df['Total'].idxmax()
+            st.metric("Top Brand", top_brand)
         
         # Export
         excel_data = to_excel(df)
