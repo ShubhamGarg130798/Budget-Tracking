@@ -61,6 +61,12 @@ st.markdown("""
 # USER ROLES AND ACCESS CONTROL
 # Configure access for different roles
 USER_ROLES = {
+    # HR - Can only add expenses
+    "hr": {
+        "users": ["HR", "HR Team", "Rahul", "Priya", "Neha"],  # Add your HR staff names here
+        "stage": 0,
+        "title": "HR - Brand Staff"
+    },
     # Brand Heads - Stage 1 Approvers
     "brand_heads": {
         "users": ["Swati", "Ashutosh"],
@@ -294,6 +300,20 @@ def get_approved_expenses_by_user(username, stage):
     conn.close()
     return df
 
+def get_expenses_by_user(username):
+    """Get all expenses added by a specific user (for HR view)"""
+    conn = sqlite3.connect('expenses.db')
+    query = """
+        SELECT id, date, brand, category, amount, description, added_by,
+               stage1_status, stage2_status, stage3_status, created_at
+        FROM expenses
+        WHERE added_by = ?
+        ORDER BY created_at DESC
+    """
+    df = pd.read_sql_query(query, conn, params=(username,))
+    conn.close()
+    return df
+
 def approve_expense_stage1(expense_id, approved_by, status, remarks):
     """Approve/Reject at Stage 1 (Brand Head)"""
     conn = sqlite3.connect('expenses.db')
@@ -451,6 +471,7 @@ if not st.session_state.logged_in:
     st.markdown("---")
     st.info("""
     **👥 Registered Users:**
+    - **HR - Brand Staff:** HR, HR Team, Rahul, Priya, Neha
     - **Brand Heads:** Swati, Ashutosh
     - **Senior Manager:** Shruti Ma'am
     - **Accounts Team:** Hansi, Shubham, Accounts, Finance Team
@@ -477,18 +498,22 @@ st.markdown("---")
 # Start with Add Expense as the first option for everyone
 page_options = ["➕ Add Expense"]
 
-# Add approval pages based on role
-if st.session_state.user_role == "brand_heads" or st.session_state.user_role == "admin":
-    page_options.append("✅ Approval Stage 1 (Brand Head)")
+# HR users only get Add Expense and My Expenses
+if st.session_state.user_role == "hr":
+    page_options.append("📝 My Expenses")
+else:
+    # Add approval pages based on role
+    if st.session_state.user_role == "brand_heads" or st.session_state.user_role == "admin":
+        page_options.append("✅ Approval Stage 1 (Brand Head)")
 
-if st.session_state.user_role == "stage2_approver" or st.session_state.user_role == "admin":
-    page_options.append("✅ Approval Stage 2 (Shruti Ma'am)")
+    if st.session_state.user_role == "stage2_approver" or st.session_state.user_role == "admin":
+        page_options.append("✅ Approval Stage 2 (Shruti Ma'am)")
 
-if st.session_state.user_role == "accounts_team" or st.session_state.user_role == "admin":
-    page_options.append("💳 Approval Stage 3 (Accounts Payment)")
+    if st.session_state.user_role == "accounts_team" or st.session_state.user_role == "admin":
+        page_options.append("💳 Approval Stage 3 (Accounts Payment)")
 
-# Everyone can see dashboard and all expenses
-page_options.extend(["📊 Dashboard", "📋 View All Expenses"])
+    # Everyone except HR can see dashboard and all expenses
+    page_options.extend(["📊 Dashboard", "📋 View All Expenses"])
 
 page = st.sidebar.selectbox("📌 Navigation", page_options)
 
@@ -522,6 +547,60 @@ if page_clean == "Add Expense":
                 st.success("🎉 Expense submitted successfully! It will now go through the approval workflow.")
             else:
                 st.error("⚠️ Please enter amount and your name!")
+
+# Page: My Expenses (HR View)
+elif page_clean == "My Expenses":
+    st.header("📝 My Submitted Expenses")
+    
+    my_expenses = get_expenses_by_user(st.session_state.username)
+    
+    if not my_expenses.empty:
+        # Add overall status column
+        my_expenses['Overall_Status'] = my_expenses.apply(get_overall_status, axis=1)
+        
+        # Summary metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        total_expenses = my_expenses['amount'].sum()
+        total_count = len(my_expenses)
+        pending_count = len(my_expenses[my_expenses['stage1_status'] == 'Pending'])
+        paid_count = len(my_expenses[my_expenses['stage3_status'] == 'Paid'])
+        
+        col1.metric("💰 Total Amount", f"₹{total_expenses:,.2f}")
+        col2.metric("📝 Total Expenses", total_count)
+        col3.metric("⏳ Pending", pending_count)
+        col4.metric("✅ Paid", paid_count)
+        
+        st.markdown("---")
+        
+        # Display table
+        display_df = my_expenses[[
+            'id', 'date', 'brand', 'category', 'amount', 'description',
+            'stage1_status', 'stage2_status', 'stage3_status', 
+            'Overall_Status', 'created_at'
+        ]].copy()
+        
+        display_df['amount'] = display_df['amount'].apply(lambda x: f"₹{x:,.2f}")
+        display_df = display_df.rename(columns={
+            'stage1_status': 'Stage 1',
+            'stage2_status': 'Stage 2',
+            'stage3_status': 'Payment',
+            'Overall_Status': 'Status',
+            'created_at': 'Submitted On'
+        })
+        
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        
+        # Export option
+        excel_data = to_excel(my_expenses)
+        st.download_button(
+            label="📥 Download My Expenses",
+            data=excel_data,
+            file_name=f"my_expenses_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.info("📌 You haven't submitted any expenses yet.")
 
 # Page: Approval Stage 1 (Brand Head)
 elif "Approval Stage 1" in page_clean:
@@ -1014,7 +1093,7 @@ elif page_clean == "View All Expenses":
 st.markdown("---")
 st.markdown("""
     <div style='text-align: center; color: #666;'>
-        💡 <b>Multi-Stage Approval System:</b> Stage 1 (Brand Head) → Stage 2 (Shruti Ma'am) → Stage 3 (Accounts Payment) | 
+        💡 <b>Multi-Stage Approval System:</b> HR Entry → Stage 1 (Brand Head) → Stage 2 (Shruti Ma'am) → Stage 3 (Accounts Payment) | 
         🔐 Role-based access control enabled
     </div>
 """, unsafe_allow_html=True)
