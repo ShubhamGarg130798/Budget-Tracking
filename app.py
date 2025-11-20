@@ -63,7 +63,7 @@ st.markdown("""
 USER_ROLES = {
     # HR - Can only add expenses
     "hr": {
-        "users": ["HR", "HR Team", "Rahul", "Priya", "Neha"],  # Add your HR staff names here
+        "users": ["HR", "HR Team", "Kunal","Sonal"],  # Add your HR staff names here
         "stage": 0,
         "title": "HR - Brand Staff"
     },
