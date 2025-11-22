@@ -304,7 +304,30 @@ def get_expenses_for_approval(stage, username=None):
     conn.close()
     return df
 
-def get_expenses_by_user(username):
+def get_approved_expenses_by_user(username, stage):
+    """Get all expenses approved/rejected by a specific user at a given stage"""
+    conn = sqlite3.connect('expenses.db')
+    if stage == 1:
+        query = """
+            SELECT * FROM expenses 
+            WHERE stage1_approved_by = ? AND stage1_status IN ('Approved', 'Rejected')
+            ORDER BY stage1_approved_date DESC
+        """
+    elif stage == 2:
+        query = """
+            SELECT * FROM expenses 
+            WHERE stage2_approved_by = ? AND stage2_status IN ('Approved', 'Rejected')
+            ORDER BY stage2_approved_date DESC
+        """
+    elif stage == 3:
+        query = """
+            SELECT * FROM expenses 
+            WHERE stage3_paid_by = ? AND stage3_status IN ('Paid', 'Rejected')
+            ORDER BY stage3_paid_date DESC
+        """
+    df = pd.read_sql_query(query, conn, params=(username,))
+    conn.close()
+    return df
     """Get all expenses added by a specific user"""
     conn = sqlite3.connect('expenses.db')
     query = """
@@ -534,135 +557,322 @@ elif page_clean == "My Expenses":
 elif "Approval Stage 1" in page_clean:
     st.header("✅ Approval Stage 1 - Brand Head Review")
     
-    # Brand heads only see expenses assigned to them
-    if st.session_state.user_role == "brand_heads":
-        pending_expenses = get_expenses_for_approval(1, st.session_state.full_name)
-    else:
-        # Admin sees all
-        pending_expenses = get_expenses_for_approval(1)
+    tab1, tab2 = st.tabs(["⏳ Approval Pending", "✅ Approved/Rejected"])
     
-    if not pending_expenses.empty:
-        st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
+    with tab1:
+        st.subheader("Expenses Pending Your Approval")
         
-        for idx, row in pending_expenses.iterrows():
-            with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
-                col1, col2, col3 = st.columns(3)
-                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
-                col2.metric("🏢 Brand", row['brand'])
-                col3.metric("📂 Category", row['category'])
-                
-                st.markdown(f"**📝 Description:** {row['description']}")
-                st.markdown(f"**👤 Submitted By:** {row['added_by']}")
-                if pd.notna(row.get('stage1_assigned_to')):
-                    st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
-                
-                remarks = st.text_area("💬 Remarks", key=f"remarks_s1_{row['id']}")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✅ Approve", key=f"approve_s1_{row['id']}", type="primary"):
-                        approve_expense_stage1(row['id'], st.session_state.full_name, 'Approved', remarks)
-                        st.success("✅ Approved!")
-                        st.rerun()
-                
-                with col2:
-                    if st.button("❌ Reject", key=f"reject_s1_{row['id']}"):
-                        if remarks:
-                            approve_expense_stage1(row['id'], st.session_state.full_name, 'Rejected', remarks)
-                            st.error("❌ Rejected!")
+        # Brand heads only see expenses assigned to them
+        if st.session_state.user_role == "brand_heads":
+            pending_expenses = get_expenses_for_approval(1, st.session_state.full_name)
+        else:
+            # Admin sees all
+            pending_expenses = get_expenses_for_approval(1)
+        
+        if not pending_expenses.empty:
+            st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
+            
+            for idx, row in pending_expenses.iterrows():
+                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                    col2.metric("🏢 Brand", row['brand'])
+                    col3.metric("📂 Category", row['category'])
+                    
+                    st.markdown(f"**📝 Description:** {row['description']}")
+                    st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                    if pd.notna(row.get('stage1_assigned_to')):
+                        st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
+                    st.markdown(f"**📅 Submitted On:** {row['created_at']}")
+                    
+                    st.markdown("---")
+                    remarks = st.text_area("💬 Remarks", key=f"remarks_s1_{row['id']}")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Approve", key=f"approve_s1_{row['id']}", type="primary", use_container_width=True):
+                            approve_expense_stage1(row['id'], st.session_state.full_name, 'Approved', remarks)
+                            st.success("✅ Approved!")
                             st.rerun()
-                        else:
-                            st.warning("⚠️ Please provide remarks")
-    else:
-        st.success("✅ No pending approvals!")
+                    
+                    with col2:
+                        if st.button("❌ Reject", key=f"reject_s1_{row['id']}", use_container_width=True):
+                            if remarks:
+                                approve_expense_stage1(row['id'], st.session_state.full_name, 'Rejected', remarks)
+                                st.error("❌ Rejected!")
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Please provide remarks for rejection")
+        else:
+            st.success("✅ No pending approvals!")
+    
+    with tab2:
+        st.subheader("My Approval History")
+        
+        approved_expenses = get_approved_expenses_by_user(st.session_state.full_name, 1)
+        
+        if not approved_expenses.empty:
+            # Add overall status
+            approved_expenses['Overall_Status'] = approved_expenses.apply(get_overall_status, axis=1)
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            total_approved = len(approved_expenses[approved_expenses['stage1_status'] == 'Approved'])
+            total_rejected = len(approved_expenses[approved_expenses['stage1_status'] == 'Rejected'])
+            amount_approved = approved_expenses[approved_expenses['stage1_status'] == 'Approved']['amount'].sum()
+            
+            col1.metric("✅ Approved", total_approved)
+            col2.metric("❌ Rejected", total_rejected)
+            col3.metric("💰 Amount Approved", f"₹{amount_approved:,.2f}")
+            col4.metric("📝 Total Reviewed", len(approved_expenses))
+            
+            st.markdown("---")
+            
+            # Display table
+            for idx, row in approved_expenses.iterrows():
+                status_icon = "✅" if row['stage1_status'] == 'Approved' else "❌"
+                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {row['stage1_status']}"):
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                    col2.metric("🏢 Brand", row['brand'])
+                    col3.metric("📂 Category", row['category'])
+                    
+                    st.markdown(f"**📝 Description:** {row['description']}")
+                    st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                    st.markdown(f"**📅 Expense Date:** {row['date']}")
+                    
+                    st.markdown("---")
+                    st.markdown("**My Approval Details:**")
+                    st.markdown(f"- **Decision:** {row['stage1_status']}")
+                    st.markdown(f"- **Approved On:** {row['stage1_approved_date']}")
+                    if row['stage1_remarks']:
+                        st.markdown(f"- **My Remarks:** {row['stage1_remarks']}")
+                    
+                    st.markdown("---")
+                    st.markdown(f"**Current Status:** {row['Overall_Status']}")
+                    if row['stage1_status'] == 'Approved':
+                        st.markdown(f"- Stage 2 Status: {row['stage2_status']}")
+                        st.markdown(f"- Payment Status: {row['stage3_status']}")
+        else:
+            st.info("📌 You haven't approved or rejected any expenses yet.")
 
 # Page 4: Approval Stage 2
 elif "Approval Stage 2" in page_clean:
     st.header("✅ Approval Stage 2 - Senior Manager Review")
     
-    pending_expenses = get_expenses_for_approval(2)
+    tab1, tab2 = st.tabs(["⏳ Approval Pending", "✅ Approved/Rejected"])
     
-    if not pending_expenses.empty:
-        st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
+    with tab1:
+        st.subheader("Expenses Pending Your Approval")
         
-        for idx, row in pending_expenses.iterrows():
-            with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
-                col1, col2, col3 = st.columns(3)
-                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
-                col2.metric("🏢 Brand", row['brand'])
-                col3.metric("📂 Category", row['category'])
-                
-                st.markdown(f"**📝 Description:** {row['description']}")
-                st.markdown(f"**✅ Stage 1 Approved By:** {row['stage1_approved_by']}")
-                
-                remarks = st.text_area("💬 Remarks", key=f"remarks_s2_{row['id']}")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✅ Approve", key=f"approve_s2_{row['id']}", type="primary"):
-                        approve_expense_stage2(row['id'], st.session_state.full_name, 'Approved', remarks)
-                        st.success("✅ Approved!")
-                        st.rerun()
-                
-                with col2:
-                    if st.button("❌ Reject", key=f"reject_s2_{row['id']}"):
-                        if remarks:
-                            approve_expense_stage2(row['id'], st.session_state.full_name, 'Rejected', remarks)
-                            st.error("❌ Rejected!")
+        pending_expenses = get_expenses_for_approval(2)
+        
+        if not pending_expenses.empty:
+            st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
+            
+            for idx, row in pending_expenses.iterrows():
+                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                    col2.metric("🏢 Brand", row['brand'])
+                    col3.metric("📂 Category", row['category'])
+                    
+                    st.markdown(f"**📝 Description:** {row['description']}")
+                    st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                    st.markdown(f"**📅 Expense Date:** {row['date']}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Stage 1 Approval:**")
+                    st.markdown(f"- ✅ Approved by: {row['stage1_approved_by']}")
+                    st.markdown(f"- 📅 Approved on: {row['stage1_approved_date']}")
+                    if pd.notna(row.get('stage1_remarks')) and row['stage1_remarks']:
+                        st.markdown(f"- 💬 Remarks: {row['stage1_remarks']}")
+                    
+                    st.markdown("---")
+                    remarks = st.text_area("💬 Remarks", key=f"remarks_s2_{row['id']}")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Approve", key=f"approve_s2_{row['id']}", type="primary", use_container_width=True):
+                            approve_expense_stage2(row['id'], st.session_state.full_name, 'Approved', remarks)
+                            st.success("✅ Approved!")
                             st.rerun()
-                        else:
-                            st.warning("⚠️ Please provide remarks")
-    else:
-        st.success("✅ No pending approvals!")
+                    
+                    with col2:
+                        if st.button("❌ Reject", key=f"reject_s2_{row['id']}", use_container_width=True):
+                            if remarks:
+                                approve_expense_stage2(row['id'], st.session_state.full_name, 'Rejected', remarks)
+                                st.error("❌ Rejected!")
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Please provide remarks for rejection")
+        else:
+            st.success("✅ No pending approvals!")
+    
+    with tab2:
+        st.subheader("My Approval History")
+        
+        approved_expenses = get_approved_expenses_by_user(st.session_state.full_name, 2)
+        
+        if not approved_expenses.empty:
+            # Add overall status
+            approved_expenses['Overall_Status'] = approved_expenses.apply(get_overall_status, axis=1)
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            total_approved = len(approved_expenses[approved_expenses['stage2_status'] == 'Approved'])
+            total_rejected = len(approved_expenses[approved_expenses['stage2_status'] == 'Rejected'])
+            amount_approved = approved_expenses[approved_expenses['stage2_status'] == 'Approved']['amount'].sum()
+            
+            col1.metric("✅ Approved", total_approved)
+            col2.metric("❌ Rejected", total_rejected)
+            col3.metric("💰 Amount Approved", f"₹{amount_approved:,.2f}")
+            col4.metric("📝 Total Reviewed", len(approved_expenses))
+            
+            st.markdown("---")
+            
+            # Display table
+            for idx, row in approved_expenses.iterrows():
+                status_icon = "✅" if row['stage2_status'] == 'Approved' else "❌"
+                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {row['stage2_status']}"):
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                    col2.metric("🏢 Brand", row['brand'])
+                    col3.metric("📂 Category", row['category'])
+                    
+                    st.markdown(f"**📝 Description:** {row['description']}")
+                    st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                    st.markdown(f"**📅 Expense Date:** {row['date']}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Stage 1 Approval:**")
+                    st.markdown(f"- Approved by: {row['stage1_approved_by']}")
+                    st.markdown(f"- Approved on: {row['stage1_approved_date']}")
+                    
+                    st.markdown("---")
+                    st.markdown("**My Approval Details (Stage 2):**")
+                    st.markdown(f"- **Decision:** {row['stage2_status']}")
+                    st.markdown(f"- **Approved On:** {row['stage2_approved_date']}")
+                    if row['stage2_remarks']:
+                        st.markdown(f"- **My Remarks:** {row['stage2_remarks']}")
+                    
+                    st.markdown("---")
+                    st.markdown(f"**Current Status:** {row['Overall_Status']}")
+                    if row['stage2_status'] == 'Approved':
+                        st.markdown(f"- Payment Status: {row['stage3_status']}")
+        else:
+            st.info("📌 You haven't approved or rejected any expenses yet.")
 
 # Page 5: Approval Stage 3 (Payment)
 elif "Approval Stage 3" in page_clean:
     st.header("💳 Approval Stage 3 - Accounts Payment Processing")
     
-    pending_expenses = get_expenses_for_approval(3)
+    tab1, tab2 = st.tabs(["⏳ Payment Pending", "✅ Paid/Rejected"])
     
-    if not pending_expenses.empty:
-        st.info(f"📌 You have **{len(pending_expenses)}** expense(s) ready for payment")
+    with tab1:
+        st.subheader("Expenses Ready for Payment")
         
-        for idx, row in pending_expenses.iterrows():
-            with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
-                col1, col2, col3 = st.columns(3)
-                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
-                col2.metric("🏢 Brand", row['brand'])
-                col3.metric("📂 Category", row['category'])
-                
-                st.markdown(f"**📝 Description:** {row['description']}")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    payment_mode = st.selectbox("💳 Payment Mode", PAYMENT_MODES, key=f"pm_{row['id']}")
-                    transaction_ref = st.text_input("🔢 Transaction Ref", key=f"tr_{row['id']}")
-                
-                with col2:
-                    remarks = st.text_area("💬 Remarks", key=f"remarks_s3_{row['id']}")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("💰 Mark as Paid", key=f"paid_{row['id']}", type="primary"):
-                        if transaction_ref:
-                            approve_expense_stage3(row['id'], st.session_state.full_name, 'Paid', 
-                                                 payment_mode, transaction_ref, remarks)
-                            st.success("✅ Payment processed!")
-                            st.rerun()
-                        else:
-                            st.warning("⚠️ Please provide transaction reference")
-                
-                with col2:
-                    if st.button("❌ Reject", key=f"reject_s3_{row['id']}"):
-                        if remarks:
-                            approve_expense_stage3(row['id'], st.session_state.full_name, 'Rejected', 
-                                                 None, None, remarks)
-                            st.error("❌ Payment rejected!")
-                            st.rerun()
-                        else:
-                            st.warning("⚠️ Please provide remarks")
-    else:
-        st.success("✅ No pending payments!")
+        pending_expenses = get_expenses_for_approval(3)
+        
+        if not pending_expenses.empty:
+            st.info(f"📌 You have **{len(pending_expenses)}** expense(s) ready for payment")
+            
+            for idx, row in pending_expenses.iterrows():
+                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("💰 Amount to Pay", f"₹{row['amount']:,.2f}")
+                    col2.metric("🏢 Brand", row['brand'])
+                    col3.metric("📂 Category", row['category'])
+                    
+                    st.markdown(f"**📝 Description:** {row['description']}")
+                    st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                    st.markdown(f"**📅 Expense Date:** {row['date']}")
+                    
+                    st.markdown("---")
+                    st.markdown("**✅ Approval Status:**")
+                    st.markdown(f"- Stage 1: ✅ Approved by {row['stage1_approved_by']} on {row['stage1_approved_date']}")
+                    st.markdown(f"- Stage 2: ✅ Approved by {row['stage2_approved_by']} on {row['stage2_approved_date']}")
+                    
+                    st.markdown("---")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        payment_mode = st.selectbox("💳 Payment Mode", PAYMENT_MODES, key=f"pm_{row['id']}")
+                        transaction_ref = st.text_input("🔢 Transaction Reference/Cheque No.", key=f"tr_{row['id']}")
+                    
+                    with col2:
+                        remarks = st.text_area("💬 Payment Remarks", key=f"remarks_s3_{row['id']}")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("💰 Mark as Paid", key=f"paid_{row['id']}", type="primary", use_container_width=True):
+                            if transaction_ref:
+                                approve_expense_stage3(row['id'], st.session_state.full_name, 'Paid', 
+                                                     payment_mode, transaction_ref, remarks)
+                                st.success("✅ Payment processed!")
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Please provide transaction reference")
+                    
+                    with col2:
+                        if st.button("❌ Reject Payment", key=f"reject_s3_{row['id']}", use_container_width=True):
+                            if remarks:
+                                approve_expense_stage3(row['id'], st.session_state.full_name, 'Rejected', 
+                                                     None, None, remarks)
+                                st.error("❌ Payment rejected!")
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Please provide remarks for rejection")
+        else:
+            st.success("✅ No pending payments!")
+    
+    with tab2:
+        st.subheader("Payment History")
+        
+        payment_history = get_approved_expenses_by_user(st.session_state.full_name, 3)
+        
+        if not payment_history.empty:
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            total_paid = len(payment_history[payment_history['stage3_status'] == 'Paid'])
+            total_rejected = len(payment_history[payment_history['stage3_status'] == 'Rejected'])
+            amount_paid = payment_history[payment_history['stage3_status'] == 'Paid']['amount'].sum()
+            
+            col1.metric("💰 Paid", total_paid)
+            col2.metric("❌ Rejected", total_rejected)
+            col3.metric("💵 Total Amount Paid", f"₹{amount_paid:,.2f}")
+            col4.metric("📝 Total Processed", len(payment_history))
+            
+            st.markdown("---")
+            
+            # Display table
+            for idx, row in payment_history.iterrows():
+                status_icon = "✅" if row['stage3_status'] == 'Paid' else "❌"
+                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {row['stage3_status']}"):
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                    col2.metric("🏢 Brand", row['brand'])
+                    col3.metric("📂 Category", row['category'])
+                    
+                    st.markdown(f"**📝 Description:** {row['description']}")
+                    st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                    st.markdown(f"**📅 Expense Date:** {row['date']}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Approval History:**")
+                    st.markdown(f"- Stage 1: Approved by {row['stage1_approved_by']}")
+                    st.markdown(f"- Stage 2: Approved by {row['stage2_approved_by']}")
+                    
+                    st.markdown("---")
+                    st.markdown("**My Payment Details (Stage 3):**")
+                    st.markdown(f"- **Status:** {row['stage3_status']}")
+                    st.markdown(f"- **Processed On:** {row['stage3_paid_date']}")
+                    if row['stage3_status'] == 'Paid':
+                        st.markdown(f"- **Payment Mode:** {row['stage3_payment_mode']}")
+                        st.markdown(f"- **Transaction Ref:** {row['stage3_transaction_ref']}")
+                    if row['stage3_remarks']:
+                        st.markdown(f"- **Remarks:** {row['stage3_remarks']}")
+        else:
+            st.info("📌 You haven't processed any payments yet.")
 
 # Page 6: Dashboard
 elif page_clean == "Dashboard":
