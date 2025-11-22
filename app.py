@@ -407,7 +407,7 @@ if 'logged_in' not in st.session_state:
 
 # Login Page
 if not st.session_state.logged_in:
-    st.title("🔐 Login - Brand Expense Tracker")
+    st.title("🔐 Brand Expense Tracker")
     st.markdown("---")
     
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -432,15 +432,6 @@ if not st.session_state.logged_in:
                     st.error("❌ Invalid username or password!")
             else:
                 st.warning("⚠️ Please enter both username and password")
-    
-    st.markdown("---")
-    st.info("""
-    **🔐 Default Admin Credentials:**
-    - **Username:** admin
-    - **Password:** admin123
-    
-    ⚠️ Please contact your administrator if you don't have login credentials.
-    """)
     
     st.stop()
 
