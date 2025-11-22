@@ -104,6 +104,7 @@ def init_db():
             amount REAL NOT NULL,
             description TEXT,
             added_by TEXT,
+            stage1_assigned_to TEXT,
             stage1_status TEXT DEFAULT 'Pending',
             stage1_approved_by TEXT,
             stage1_approved_date TIMESTAMP,
@@ -204,15 +205,50 @@ def reset_user_password(user_id, new_password):
     conn.close()
 
 # Expense Functions
-def add_expense(date, brand, category, amount, description, added_by):
+def add_expense(date, brand, category, amount, description, added_by, assigned_to=None):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     c.execute('''
-        INSERT INTO expenses (date, brand, category, amount, description, added_by)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (date, brand, category, amount, description, added_by))
+        INSERT INTO expenses (date, brand, category, amount, description, added_by, stage1_assigned_to)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (date, brand, category, amount, description, added_by, assigned_to))
     conn.commit()
     conn.close()
+
+def get_brand_heads():
+    """Get all users with brand_heads role"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute("""
+        SELECT id, full_name, username 
+        FROM users 
+        WHERE role = 'brand_heads' AND is_active = 1
+        ORDER BY full_name
+    """)
+    result = c.fetchall()
+    conn.close()
+    return result
+
+def change_password(username, old_password, new_password):
+    """Change user's own password"""
+    # First verify old password
+    old_hashed = hashlib.sha256(old_password.encode()).hexdigest()
+    new_hashed = hashlib.sha256(new_password.encode()).hexdigest()
+    
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    
+    # Check if old password is correct
+    c.execute("SELECT id FROM users WHERE username = ? AND password = ?", (username, old_hashed))
+    if not c.fetchone():
+        conn.close()
+        return False, "Current password is incorrect"
+    
+    # Update password
+    c.execute("UPDATE users SET password = ? WHERE username = ?", (new_hashed, username))
+    conn.commit()
+    conn.close()
+    return True, "Password changed successfully"
 
 def get_all_expenses():
     conn = sqlite3.connect('expenses.db')
@@ -220,21 +256,32 @@ def get_all_expenses():
     conn.close()
     return df
 
-def get_expenses_for_approval(stage):
+def get_expenses_for_approval(stage, username=None):
     """Get expenses pending at specific approval stage"""
     conn = sqlite3.connect('expenses.db')
     if stage == 1:
-        query = """
-            SELECT * FROM expenses 
-            WHERE stage1_status = 'Pending' 
-            ORDER BY created_at ASC
-        """
+        # Brand heads only see expenses assigned to them
+        if username:
+            query = """
+                SELECT * FROM expenses 
+                WHERE stage1_status = 'Pending' AND stage1_assigned_to = ?
+                ORDER BY created_at ASC
+            """
+            df = pd.read_sql_query(query, conn, params=(username,))
+        else:
+            query = """
+                SELECT * FROM expenses 
+                WHERE stage1_status = 'Pending' 
+                ORDER BY created_at ASC
+            """
+            df = pd.read_sql_query(query, conn)
     elif stage == 2:
         query = """
             SELECT * FROM expenses 
             WHERE stage1_status = 'Approved' AND stage2_status = 'Pending' 
             ORDER BY created_at ASC
         """
+        df = pd.read_sql_query(query, conn)
     elif stage == 3:
         query = """
             SELECT * FROM expenses 
@@ -242,7 +289,7 @@ def get_expenses_for_approval(stage):
             AND stage3_status = 'Pending' 
             ORDER BY created_at ASC
         """
-    df = pd.read_sql_query(query, conn)
+        df = pd.read_sql_query(query, conn)
     conn.close()
     return df
 
@@ -383,7 +430,7 @@ st.markdown("---")
 page_options = ["➕ Add Expense"]
 
 if st.session_state.user_role == "hr":
-    page_options.append("📝 My Expenses")
+    page_options.extend(["📝 My Expenses", "🔐 Change Password"])
 else:
     if st.session_state.user_role in ["brand_heads", "admin"]:
         page_options.append("✅ Approval Stage 1 (Brand Head)")
@@ -394,7 +441,7 @@ else:
     if st.session_state.user_role in ["accounts_team", "admin"]:
         page_options.append("💳 Approval Stage 3 (Accounts Payment)")
     
-    page_options.extend(["📊 Dashboard", "📋 View All Expenses"])
+    page_options.extend(["📊 Dashboard", "📋 View All Expenses", "🔐 Change Password"])
 
 if st.session_state.user_role == "admin":
     page_options.append("👥 User Management")
@@ -419,17 +466,26 @@ if page_clean == "Add Expense":
         with col2:
             amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
             added_by = st.text_input("👤 Added By", value=st.session_state.full_name)
+            
+            # Get brand heads for assignment
+            brand_heads = get_brand_heads()
+            if brand_heads:
+                brand_head_options = {bh[1]: bh[1] for bh in brand_heads}  # full_name: full_name
+                assigned_to = st.selectbox("👨‍💼 Assign to Brand Head *", options=list(brand_head_options.keys()))
+            else:
+                st.warning("⚠️ No Brand Heads available. Please contact admin.")
+                assigned_to = None
         
         description = st.text_area("📝 Description", placeholder="Enter expense details...")
         
         submitted = st.form_submit_button("✅ Add Expense", use_container_width=True, type="primary")
         
         if submitted:
-            if amount > 0 and added_by:
-                add_expense(expense_date, brand, category, amount, description, added_by)
-                st.success("🎉 Expense submitted successfully!")
+            if amount > 0 and added_by and assigned_to:
+                add_expense(expense_date, brand, category, amount, description, added_by, assigned_to)
+                st.success(f"🎉 Expense submitted successfully and assigned to {assigned_to}!")
             else:
-                st.error("⚠️ Please enter amount and your name!")
+                st.error("⚠️ Please fill all required fields!")
 
 # Page 2: My Expenses (HR View)
 elif page_clean == "My Expenses":
@@ -462,7 +518,12 @@ elif page_clean == "My Expenses":
 elif "Approval Stage 1" in page_clean:
     st.header("✅ Approval Stage 1 - Brand Head Review")
     
-    pending_expenses = get_expenses_for_approval(1)
+    # Brand heads only see expenses assigned to them
+    if st.session_state.user_role == "brand_heads":
+        pending_expenses = get_expenses_for_approval(1, st.session_state.full_name)
+    else:
+        # Admin sees all
+        pending_expenses = get_expenses_for_approval(1)
     
     if not pending_expenses.empty:
         st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
@@ -476,6 +537,7 @@ elif "Approval Stage 1" in page_clean:
                 
                 st.markdown(f"**📝 Description:** {row['description']}")
                 st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
                 
                 remarks = st.text_area("💬 Remarks", key=f"remarks_s1_{row['id']}")
                 
@@ -779,6 +841,38 @@ elif page_clean == "User Management":
                                 st.rerun()
         else:
             st.info("No users found.")
+
+# Page 9: Change Password
+elif page_clean == "Change Password":
+    st.header("🔐 Change Password")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown(f"### Change password for: **{st.session_state.full_name}**")
+        st.markdown("---")
+        
+        with st.form("change_password_form"):
+            current_password = st.text_input("Current Password", type="password", placeholder="Enter your current password")
+            new_password = st.text_input("New Password", type="password", placeholder="Enter new password (min 6 characters)")
+            confirm_password = st.text_input("Confirm New Password", type="password", placeholder="Re-enter new password")
+            
+            submitted = st.form_submit_button("🔄 Change Password", use_container_width=True, type="primary")
+            
+            if submitted:
+                if not current_password or not new_password or not confirm_password:
+                    st.error("❌ Please fill all fields!")
+                elif len(new_password) < 6:
+                    st.error("❌ New password must be at least 6 characters long!")
+                elif new_password != confirm_password:
+                    st.error("❌ New passwords do not match!")
+                else:
+                    success, message = change_password(st.session_state.username, current_password, new_password)
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.balloons()
+                    else:
+                        st.error(f"❌ {message}")
 
 # Footer
 st.markdown("---")
