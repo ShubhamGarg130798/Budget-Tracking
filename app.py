@@ -59,8 +59,8 @@ BRANDS = [
 
 # Expense categories
 CATEGORIES = [
-    "Marketing", "Operations", "Salaries", "Technology", "Office Rent",
-    "Utilities", "Travel", "Professional Fees", "Commission", "Interest",
+    "Assets-Laptops", "Assets-Phone", "Assets-Sim", "Marketing-Google", "Marketing-Meta", "Marketing-Twitter", "Marketing-Affiliate", "Marketing-RCS", "Marketing-WhatsApp", "Marketing-Mail Broadcast", "Marketing-Agency", "Marketing-Database Purchase", "Operations", "Utility- Electricity Bill", "Utility- Water Bill", "Salaries", "Petty Cash", "Office Rent",
+    "Incentives", "Travel", "Professional Fees", "Commission", "Interest",
     "Petty Cash", "Other"
 ]
 
