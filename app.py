@@ -328,6 +328,8 @@ def get_approved_expenses_by_user(username, stage):
     df = pd.read_sql_query(query, conn, params=(username,))
     conn.close()
     return df
+
+def get_expenses_by_user(username):
     """Get all expenses added by a specific user"""
     conn = sqlite3.connect('expenses.db')
     query = """
@@ -391,6 +393,34 @@ def get_overall_status(row):
         return '⏳ Stage 2 Approval Pending'
     else:
         return '⏳ Stage 1 Approval Pending'
+
+def get_stage_status_display(row):
+    """Get formatted status display for all stages"""
+    # Stage 1 - Brand Head
+    if row['stage1_status'] == 'Approved':
+        s1 = "Brand Head: ✅ Approved"
+    elif row['stage1_status'] == 'Rejected':
+        s1 = "Brand Head: ❌ Rejected"
+    else:
+        s1 = "Brand Head: ⏳ Pending"
+    
+    # Stage 2 - Senior Manager
+    if row['stage2_status'] == 'Approved':
+        s2 = "Senior Manager: ✅ Approved"
+    elif row['stage2_status'] == 'Rejected':
+        s2 = "Senior Manager: ❌ Rejected"
+    else:
+        s2 = "Senior Manager: ⏳ Pending"
+    
+    # Stage 3 - Accounts
+    if row['stage3_status'] == 'Paid':
+        s3 = "Accounts: ✅ Paid"
+    elif row['stage3_status'] == 'Rejected':
+        s3 = "Accounts: ❌ Rejected"
+    else:
+        s3 = "Accounts: ⏳ Pending"
+    
+    return f"{s1} | {s2} | {s3}"
 
 def to_excel(df):
     output = io.BytesIO()
@@ -531,9 +561,9 @@ elif page_clean == "My Expenses":
         
         # Display each expense with detailed status
         for idx, row in my_expenses.iterrows():
-            status_icon = "✅" if row['stage3_status'] == 'Paid' else "⏳" if row['stage1_status'] == 'Pending' or row['stage2_status'] == 'Pending' or row['stage3_status'] == 'Pending' else "❌"
+            status_display = get_stage_status_display(row)
             
-            with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {row['Overall_Status']}"):
+            with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                 # Basic Details
                 col1, col2, col3 = st.columns(3)
                 col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
@@ -652,7 +682,9 @@ elif "Approval Stage 1" in page_clean:
             st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
             
             for idx, row in pending_expenses.iterrows():
-                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
@@ -709,8 +741,9 @@ elif "Approval Stage 1" in page_clean:
             
             # Display table
             for idx, row in approved_expenses.iterrows():
-                status_icon = "✅" if row['stage1_status'] == 'Approved' else "❌"
-                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {row['stage1_status']}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
@@ -750,7 +783,9 @@ elif "Approval Stage 2" in page_clean:
             st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
             
             for idx, row in pending_expenses.iterrows():
-                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
@@ -812,8 +847,9 @@ elif "Approval Stage 2" in page_clean:
             
             # Display table
             for idx, row in approved_expenses.iterrows():
-                status_icon = "✅" if row['stage2_status'] == 'Approved' else "❌"
-                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {row['stage2_status']}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
@@ -857,7 +893,9 @@ elif "Approval Stage 3" in page_clean:
             st.info(f"📌 You have **{len(pending_expenses)}** expense(s) ready for payment")
             
             for idx, row in pending_expenses.iterrows():
-                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount to Pay", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
@@ -925,8 +963,9 @@ elif "Approval Stage 3" in page_clean:
             
             # Display table
             for idx, row in payment_history.iterrows():
-                status_icon = "✅" if row['stage3_status'] == 'Paid' else "❌"
-                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {row['stage3_status']}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
