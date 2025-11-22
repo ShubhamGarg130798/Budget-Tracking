@@ -1,9 +1,77 @@
+import streamlit as st
+import sqlite3
+import pandas as pd
+from datetime import datetime, date
+import io
+import plotly.express as px
+import plotly.graph_objects as go
+import hashlib
+
+# Page configuration
+st.set_page_config(
+    page_title="Brand Expense Tracker",
+    page_icon="💰",
+    layout="wide"
+)
+
+# Custom CSS
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# USER ROLES
+USER_ROLES = {
+    "hr": {
+        "stage": 0,
+        "title": "HR - Brand Staff"
+    },
+    "brand_heads": {
+        "stage": 1,
+        "title": "Brand Head"
+    },
+    "stage2_approver": {
+        "stage": 2,
+        "title": "Senior Manager"
+    },
+    "accounts_team": {
+        "stage": 3,
+        "title": "Accounts Team"
+    },
+    "admin": {
+        "stage": 99,
+        "title": "Administrator"
+    }
+}
+
+# Brand list
+BRANDS = [
+    "FundoBaBa", "Salary Adda", "FastPaise", "SnapPaisa", "Salary 4 Sure",
+    "Duniya Finance", "Tejas", "BlinkR", "Salary Setu", "Qua Loans",
+    "Paisa Pop", "Salary 4 You", "Rupee Hype", "Minutes Loan", "Squid Loan",
+    "Zepto", "Paisa on Salary", "Jhatpat"
+]
+
+# Expense categories
+CATEGORIES = [
+    "Marketing", "Operations", "Salaries", "Technology", "Office Rent",
+    "Utilities", "Travel", "Professional Fees", "Commission", "Interest",
+    "Petty Cash", "Other"
+]
+
+PAYMENT_MODES = ["Cash", "Bank Transfer", "Cheque", "UPI", "Card", "Other"]
+
 # Database setup
 def init_db():
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     
-    # Users table for authentication
+    # Users table
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,17 +85,16 @@ def init_db():
         )
     ''')
     
-    # Create default admin user if not exists (password: admin123)
+    # Create default admin user if not exists
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
-        import hashlib
         admin_password = hashlib.sha256('admin123'.encode()).hexdigest()
         c.execute('''
             INSERT INTO users (username, password, full_name, role, created_by)
             VALUES (?, ?, ?, ?, ?)
         ''', ('admin', admin_password, 'System Administrator', 'admin', 'system'))
     
-    # Main expenses table with approval workflow
+    # Expenses table
     c.execute('''
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,27 +104,686 @@ def init_db():
             amount REAL NOT NULL,
             description TEXT,
             added_by TEXT,
-            
-            -- Approval Stage 1 (Brand Head)
             stage1_status TEXT DEFAULT 'Pending',
             stage1_approved_by TEXT,
             stage1_approved_date TIMESTAMP,
             stage1_remarks TEXT,
-            
-            -- Approval Stage 2 (Shruti Ma'am)
             stage2_status TEXT DEFAULT 'Pending',
             stage2_approved_by TEXT,
             stage2_approved_date TIMESTAMP,
             stage2_remarks TEXT,
-            
-            -- Approval Stage 3 (Accounts - Payment)
             stage3_status TEXT DEFAULT 'Pending',
             stage3_paid_by TEXT,
             stage3_paid_date TIMESTAMP,
             stage3_payment_mode TEXT,
             stage3_transaction_ref TEXT,
             stage3_remarks TEXT,
-            
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    conn.commit()
+    conn.close()
+
+# Initialize database
+init_db()
+
+# User Management Functions
+def authenticate_user(username, password):
+    """Authenticate user with username and password"""
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute("""
+        SELECT username, full_name, role 
+        FROM users 
+        WHERE username = ? AND password = ? AND is_active = 1
+    """, (username, hashed_password))
+    result = c.fetchone()
+    conn.close()
+    
+    return result
+
+def create_user(username, password, full_name, role, created_by):
+    """Create a new user"""
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    try:
+        c.execute('''
+            INSERT INTO users (username, password, full_name, role, created_by)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (username, hashed_password, full_name, role, created_by))
+        conn.commit()
+        conn.close()
+        return True, "User created successfully"
+    except sqlite3.IntegrityError:
+        conn.close()
+        return False, "Username already exists"
+    except Exception as e:
+        conn.close()
+        return False, str(e)
+
+def get_all_users():
+    """Get all users"""
+    conn = sqlite3.connect('expenses.db')
+    df = pd.read_sql_query("""
+        SELECT id, username, full_name, role, is_active, created_at, created_by
+        FROM users
+        ORDER BY created_at DESC
+    """, conn)
+    conn.close()
+    return df
+
+def update_user_status(user_id, is_active):
+    """Activate/Deactivate user"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute("UPDATE users SET is_active = ? WHERE id = ?", (is_active, user_id))
+    conn.commit()
+    conn.close()
+
+def delete_user(user_id):
+    """Delete user"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM users WHERE id = ? AND username != 'admin'", (user_id,))
+    conn.commit()
+    conn.close()
+
+def reset_user_password(user_id, new_password):
+    """Reset user password"""
+    hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
+    
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute("UPDATE users SET password = ? WHERE id = ?", (hashed_password, user_id))
+    conn.commit()
+    conn.close()
+
+# Expense Functions
+def add_expense(date, brand, category, amount, description, added_by):
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO expenses (date, brand, category, amount, description, added_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (date, brand, category, amount, description, added_by))
+    conn.commit()
+    conn.close()
+
+def get_all_expenses():
+    conn = sqlite3.connect('expenses.db')
+    df = pd.read_sql_query("SELECT * FROM expenses ORDER BY date DESC", conn)
+    conn.close()
+    return df
+
+def get_expenses_for_approval(stage):
+    """Get expenses pending at specific approval stage"""
+    conn = sqlite3.connect('expenses.db')
+    if stage == 1:
+        query = """
+            SELECT * FROM expenses 
+            WHERE stage1_status = 'Pending' 
+            ORDER BY created_at ASC
+        """
+    elif stage == 2:
+        query = """
+            SELECT * FROM expenses 
+            WHERE stage1_status = 'Approved' AND stage2_status = 'Pending' 
+            ORDER BY created_at ASC
+        """
+    elif stage == 3:
+        query = """
+            SELECT * FROM expenses 
+            WHERE stage1_status = 'Approved' AND stage2_status = 'Approved' 
+            AND stage3_status = 'Pending' 
+            ORDER BY created_at ASC
+        """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+def get_expenses_by_user(username):
+    """Get all expenses added by a specific user"""
+    conn = sqlite3.connect('expenses.db')
+    query = """
+        SELECT * FROM expenses 
+        WHERE added_by = ? 
+        ORDER BY created_at DESC
+    """
+    df = pd.read_sql_query(query, conn, params=(username,))
+    conn.close()
+    return df
+
+def approve_expense_stage1(expense_id, approved_by, status, remarks):
+    """Approve/Reject at Stage 1"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute('''
+        UPDATE expenses 
+        SET stage1_status = ?, stage1_approved_by = ?, 
+            stage1_approved_date = ?, stage1_remarks = ?
+        WHERE id = ?
+    ''', (status, approved_by, datetime.now(), remarks, expense_id))
+    conn.commit()
+    conn.close()
+
+def approve_expense_stage2(expense_id, approved_by, status, remarks):
+    """Approve/Reject at Stage 2"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute('''
+        UPDATE expenses 
+        SET stage2_status = ?, stage2_approved_by = ?, 
+            stage2_approved_date = ?, stage2_remarks = ?
+        WHERE id = ?
+    ''', (status, approved_by, datetime.now(), remarks, expense_id))
+    conn.commit()
+    conn.close()
+
+def approve_expense_stage3(expense_id, paid_by, status, payment_mode, transaction_ref, remarks):
+    """Mark as Paid at Stage 3"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute('''
+        UPDATE expenses 
+        SET stage3_status = ?, stage3_paid_by = ?, 
+            stage3_paid_date = ?, stage3_payment_mode = ?,
+            stage3_transaction_ref = ?, stage3_remarks = ?
+        WHERE id = ?
+    ''', (status, paid_by, datetime.now(), payment_mode, transaction_ref, remarks, expense_id))
+    conn.commit()
+    conn.close()
+
+def get_overall_status(row):
+    """Determine overall status of expense"""
+    if row['stage3_status'] == 'Paid':
+        return '✅ Paid'
+    elif row['stage3_status'] == 'Rejected' or row['stage2_status'] == 'Rejected' or row['stage1_status'] == 'Rejected':
+        return '❌ Rejected'
+    elif row['stage2_status'] == 'Approved':
+        return '⏳ Payment Pending'
+    elif row['stage1_status'] == 'Approved':
+        return '⏳ Stage 2 Approval Pending'
+    else:
+        return '⏳ Stage 1 Approval Pending'
+
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Data')
+    return output.getvalue()
+
+# Initialize session state
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = None
+    st.session_state.full_name = None
+    st.session_state.user_role = None
+
+# Login Page
+if not st.session_state.logged_in:
+    st.title("🔐 Login - Brand Expense Tracker")
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("### 👤 Please Login")
+        
+        username = st.text_input("Username", placeholder="Enter your username")
+        password = st.text_input("Password", type="password", placeholder="Enter your password")
+        
+        if st.button("🚀 Login", use_container_width=True, type="primary"):
+            if username and password:
+                user_data = authenticate_user(username, password)
+                if user_data:
+                    st.session_state.logged_in = True
+                    st.session_state.username = user_data[0]
+                    st.session_state.full_name = user_data[1]
+                    st.session_state.user_role = user_data[2]
+                    st.success(f"✅ Welcome {user_data[1]}!")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid username or password!")
+            else:
+                st.warning("⚠️ Please enter both username and password")
+    
+    st.markdown("---")
+    st.info("""
+    **🔐 Default Admin Credentials:**
+    - **Username:** admin
+    - **Password:** admin123
+    
+    ⚠️ Please contact your administrator if you don't have login credentials.
+    """)
+    
+    st.stop()
+
+# Main App (After Login)
+st.title("💰 Brand Expense Tracker")
+
+col1, col2 = st.columns([3, 1])
+with col1:
+    st.markdown(f"**Logged in as:** {st.session_state.full_name} ({USER_ROLES[st.session_state.user_role]['title']})")
+with col2:
+    if st.button("🚪 Logout"):
+        st.session_state.logged_in = False
+        st.session_state.username = None
+        st.session_state.full_name = None
+        st.session_state.user_role = None
+        st.rerun()
+
+st.markdown("---")
+
+# Navigation
+page_options = ["➕ Add Expense"]
+
+if st.session_state.user_role == "hr":
+    page_options.append("📝 My Expenses")
+else:
+    if st.session_state.user_role in ["brand_heads", "admin"]:
+        page_options.append("✅ Approval Stage 1 (Brand Head)")
+    
+    if st.session_state.user_role in ["stage2_approver", "admin"]:
+        page_options.append("✅ Approval Stage 2 (Senior Manager)")
+    
+    if st.session_state.user_role in ["accounts_team", "admin"]:
+        page_options.append("💳 Approval Stage 3 (Accounts Payment)")
+    
+    page_options.extend(["📊 Dashboard", "📋 View All Expenses"])
+
+if st.session_state.user_role == "admin":
+    page_options.append("👥 User Management")
+
+page = st.sidebar.selectbox("📌 Navigation", page_options)
+
+# Remove emoji from page name
+page_clean = page.split(" ", 1)[1] if " " in page else page
+
+# Page 1: Add Expense
+if page_clean == "Add Expense":
+    st.header("➕ Add New Expense")
+    
+    with st.form("expense_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            expense_date = st.date_input("📅 Date", value=date.today())
+            brand = st.selectbox("🏢 Brand", BRANDS)
+            category = st.selectbox("📂 Category", CATEGORIES)
+        
+        with col2:
+            amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
+            added_by = st.text_input("👤 Added By", value=st.session_state.full_name)
+        
+        description = st.text_area("📝 Description", placeholder="Enter expense details...")
+        
+        submitted = st.form_submit_button("✅ Add Expense", use_container_width=True, type="primary")
+        
+        if submitted:
+            if amount > 0 and added_by:
+                add_expense(expense_date, brand, category, amount, description, added_by)
+                st.success("🎉 Expense submitted successfully!")
+            else:
+                st.error("⚠️ Please enter amount and your name!")
+
+# Page 2: My Expenses (HR View)
+elif page_clean == "My Expenses":
+    st.header("📝 My Submitted Expenses")
+    
+    my_expenses = get_expenses_by_user(st.session_state.full_name)
+    
+    if not my_expenses.empty:
+        my_expenses['Overall_Status'] = my_expenses.apply(get_overall_status, axis=1)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("💰 Total Amount", f"₹{my_expenses['amount'].sum():,.2f}")
+        col2.metric("📝 Total Expenses", len(my_expenses))
+        col3.metric("⏳ Pending", len(my_expenses[my_expenses['stage1_status'] == 'Pending']))
+        col4.metric("✅ Paid", len(my_expenses[my_expenses['stage3_status'] == 'Paid']))
+        
+        st.markdown("---")
+        
+        display_df = my_expenses[[
+            'id', 'date', 'brand', 'category', 'amount', 'description',
+            'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
+        ]].copy()
+        display_df['amount'] = display_df['amount'].apply(lambda x: f"₹{x:,.2f}")
+        
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("📌 You haven't submitted any expenses yet.")
+
+# Page 3: Approval Stage 1
+elif "Approval Stage 1" in page_clean:
+    st.header("✅ Approval Stage 1 - Brand Head Review")
+    
+    pending_expenses = get_expenses_for_approval(1)
+    
+    if not pending_expenses.empty:
+        st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
+        
+        for idx, row in pending_expenses.iterrows():
+            with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                col1, col2, col3 = st.columns(3)
+                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                col2.metric("🏢 Brand", row['brand'])
+                col3.metric("📂 Category", row['category'])
+                
+                st.markdown(f"**📝 Description:** {row['description']}")
+                st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                
+                remarks = st.text_area("💬 Remarks", key=f"remarks_s1_{row['id']}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Approve", key=f"approve_s1_{row['id']}", type="primary"):
+                        approve_expense_stage1(row['id'], st.session_state.full_name, 'Approved', remarks)
+                        st.success("✅ Approved!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("❌ Reject", key=f"reject_s1_{row['id']}"):
+                        if remarks:
+                            approve_expense_stage1(row['id'], st.session_state.full_name, 'Rejected', remarks)
+                            st.error("❌ Rejected!")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Please provide remarks")
+    else:
+        st.success("✅ No pending approvals!")
+
+# Page 4: Approval Stage 2
+elif "Approval Stage 2" in page_clean:
+    st.header("✅ Approval Stage 2 - Senior Manager Review")
+    
+    pending_expenses = get_expenses_for_approval(2)
+    
+    if not pending_expenses.empty:
+        st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
+        
+        for idx, row in pending_expenses.iterrows():
+            with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                col1, col2, col3 = st.columns(3)
+                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                col2.metric("🏢 Brand", row['brand'])
+                col3.metric("📂 Category", row['category'])
+                
+                st.markdown(f"**📝 Description:** {row['description']}")
+                st.markdown(f"**✅ Stage 1 Approved By:** {row['stage1_approved_by']}")
+                
+                remarks = st.text_area("💬 Remarks", key=f"remarks_s2_{row['id']}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Approve", key=f"approve_s2_{row['id']}", type="primary"):
+                        approve_expense_stage2(row['id'], st.session_state.full_name, 'Approved', remarks)
+                        st.success("✅ Approved!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("❌ Reject", key=f"reject_s2_{row['id']}"):
+                        if remarks:
+                            approve_expense_stage2(row['id'], st.session_state.full_name, 'Rejected', remarks)
+                            st.error("❌ Rejected!")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Please provide remarks")
+    else:
+        st.success("✅ No pending approvals!")
+
+# Page 5: Approval Stage 3 (Payment)
+elif "Approval Stage 3" in page_clean:
+    st.header("💳 Approval Stage 3 - Accounts Payment Processing")
+    
+    pending_expenses = get_expenses_for_approval(3)
+    
+    if not pending_expenses.empty:
+        st.info(f"📌 You have **{len(pending_expenses)}** expense(s) ready for payment")
+        
+        for idx, row in pending_expenses.iterrows():
+            with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f}"):
+                col1, col2, col3 = st.columns(3)
+                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                col2.metric("🏢 Brand", row['brand'])
+                col3.metric("📂 Category", row['category'])
+                
+                st.markdown(f"**📝 Description:** {row['description']}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    payment_mode = st.selectbox("💳 Payment Mode", PAYMENT_MODES, key=f"pm_{row['id']}")
+                    transaction_ref = st.text_input("🔢 Transaction Ref", key=f"tr_{row['id']}")
+                
+                with col2:
+                    remarks = st.text_area("💬 Remarks", key=f"remarks_s3_{row['id']}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💰 Mark as Paid", key=f"paid_{row['id']}", type="primary"):
+                        if transaction_ref:
+                            approve_expense_stage3(row['id'], st.session_state.full_name, 'Paid', 
+                                                 payment_mode, transaction_ref, remarks)
+                            st.success("✅ Payment processed!")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Please provide transaction reference")
+                
+                with col2:
+                    if st.button("❌ Reject", key=f"reject_s3_{row['id']}"):
+                        if remarks:
+                            approve_expense_stage3(row['id'], st.session_state.full_name, 'Rejected', 
+                                                 None, None, remarks)
+                            st.error("❌ Payment rejected!")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Please provide remarks")
+    else:
+        st.success("✅ No pending payments!")
+
+# Page 6: Dashboard
+elif page_clean == "Dashboard":
+    st.header("📊 Dashboard Overview")
+    
+    df = get_all_expenses()
+    
+    if not df.empty:
+        df['Overall_Status'] = df.apply(get_overall_status, axis=1)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("💵 Total Expenses", f"₹{df['amount'].sum():,.2f}")
+        col2.metric("📝 Total Transactions", len(df))
+        col3.metric("✅ Paid", len(df[df['stage3_status'] == 'Paid']))
+        col4.metric("⏳ Pending", len(df[df['stage3_status'] == 'Pending']))
+        
+        st.markdown("---")
+        
+        # Brand summary chart
+        brand_summary = df.groupby('brand')['amount'].sum().reset_index()
+        brand_summary = brand_summary.nlargest(10, 'amount')
+        
+        fig = px.bar(brand_summary, x='brand', y='amount', title='Top 10 Brands by Expense')
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("📌 No expenses recorded yet.")
+
+# Page 7: View All Expenses
+elif page_clean == "View All Expenses":
+    st.header("📋 All Expenses")
+    
+    df = get_all_expenses()
+    
+    if not df.empty:
+        df['Overall_Status'] = df.apply(get_overall_status, axis=1)
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💵 Total", f"₹{df['amount'].sum():,.2f}")
+        col2.metric("📝 Count", len(df))
+        col3.metric("✅ Paid", len(df[df['stage3_status'] == 'Paid']))
+        
+        st.markdown("---")
+        
+        display_df = df[[
+            'id', 'date', 'brand', 'category', 'amount', 'description',
+            'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
+        ]].copy()
+        
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        
+        excel_data = to_excel(df)
+        st.download_button(
+            label="📥 Download Excel",
+            data=excel_data,
+            file_name=f"expenses_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.info("📌 No expenses recorded yet.")
+
+# Page 8: User Management (Admin Only)
+elif page_clean == "User Management":
+    st.header("👥 User Management (Admin Only)")
+    
+    tab1, tab2 = st.tabs(["➕ Create New User", "📋 Manage Users"])
+    
+    with tab1:
+        st.subheader("Create New User Account")
+        
+        with st.form("create_user_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                new_username = st.text_input("Username *", placeholder="e.g., john.doe")
+                new_full_name = st.text_input("Full Name *", placeholder="e.g., John Doe")
+            
+            with col2:
+                new_password = st.text_input("Password *", type="password", placeholder="Min 6 characters")
+                new_role = st.selectbox("Role *", options=list(USER_ROLES.keys()), 
+                                       format_func=lambda x: USER_ROLES[x]["title"])
+            
+            submitted = st.form_submit_button("✅ Create User", type="primary")
+            
+            if submitted:
+                if new_username and new_password and new_full_name:
+                    if len(new_password) < 6:
+                        st.error("❌ Password must be at least 6 characters!")
+                    else:
+                        success, message = create_user(
+                            new_username.lower().strip(),
+                            new_password,
+                            new_full_name,
+                            new_role,
+                            st.session_state.username
+                        )
+                        if success:
+                            st.success(f"✅ {message}")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ {message}")
+                else:
+                    st.error("❌ Please fill all fields!")
+    
+    with tab2:
+        st.subheader("Existing Users")
+        
+        users_df = get_all_users()
+        
+        if not users_df.empty:
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("👥 Total Users", len(users_df))
+            col2.metric("✅ Active", len(users_df[users_df['is_active'] == 1]))
+            col3.metric("❌ Inactive", len(users_df[users_df['is_active'] == 0]))
+            col4.metric("🔐 Admins", len(users_df[users_df['role'] == 'admin']))
+            
+            st.markdown("---")
+            
+            for idx, user in users_df.iterrows():
+                status_icon = '✅' if user['is_active'] else '❌'
+                with st.expander(f"{status_icon} {user['full_name']} (@{user['username']}) - {USER_ROLES[user['role']]['title']}"):
+                    col1, col2 = st.columns(2)
+                    
+                    col1.markdown(f"**Username:** {user['username']}")
+                    col1.markdown(f"**Full Name:** {user['full_name']}")
+                    col1.markdown(f"**Role:** {USER_ROLES[user['role']]['title']}")
+                    
+                    col2.markdown(f"**Status:** {'Active ✅' if user['is_active'] else 'Inactive ❌'}")
+                    col2.markdown(f"**Created:** {user['created_at']}")
+                    col2.markdown(f"**Created By:** {user['created_by']}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Actions:**")
+                    
+                    col_a, col_b, col_c = st.columns(3)
+                    
+                    # Toggle Active/Inactive
+                    with col_a:
+                        if user['username'] != 'admin':
+                            if user['is_active']:
+                                if st.button("⏸️ Deactivate", key=f"deact_{user['id']}", use_container_width=True):
+                                    update_user_status(user['id'], 0)
+                                    st.success("User deactivated!")
+                                    st.rerun()
+                            else:
+                                if st.button("▶️ Activate", key=f"act_{user['id']}", use_container_width=True):
+                                    update_user_status(user['id'], 1)
+                                    st.success("User activated!")
+                                    st.rerun()
+                    
+                    # Reset Password
+                    with col_b:
+                        if st.button("🔑 Reset Password", key=f"reset_{user['id']}", use_container_width=True):
+                            st.session_state[f'show_reset_{user["id"]}'] = True
+                    
+                    # Delete User
+                    with col_c:
+                        if user['username'] != 'admin':
+                            if st.button("🗑️ Delete", key=f"del_{user['id']}", use_container_width=True):
+                                st.session_state[f'confirm_delete_{user["id"]}'] = True
+                    
+                    # Reset Password Form
+                    if st.session_state.get(f'show_reset_{user["id"]}', False):
+                        with st.form(f"reset_form_{user['id']}"):
+                            new_pwd = st.text_input("New Password", type="password", key=f"new_pwd_{user['id']}")
+                            col_x, col_y = st.columns(2)
+                            with col_x:
+                                if st.form_submit_button("✅ Reset", use_container_width=True):
+                                    if len(new_pwd) >= 6:
+                                        reset_user_password(user['id'], new_pwd)
+                                        st.success("Password reset successfully!")
+                                        st.session_state[f'show_reset_{user["id"]}'] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("Password must be at least 6 characters!")
+                            with col_y:
+                                if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                    st.session_state[f'show_reset_{user["id"]}'] = False
+                                    st.rerun()
+                    
+                    # Delete Confirmation
+                    if st.session_state.get(f'confirm_delete_{user["id"]}', False):
+                        st.warning(f"⚠️ Are you sure you want to delete user '{user['username']}'?")
+                        col_x, col_y = st.columns(2)
+                        with col_x:
+                            if st.button("✅ Yes, Delete", key=f"confirm_yes_{user['id']}", type="primary"):
+                                delete_user(user['id'])
+                                st.success("User deleted successfully!")
+                                st.session_state[f'confirm_delete_{user["id"]}'] = False
+                                st.rerun()
+                        with col_y:
+                            if st.button("❌ Cancel", key=f"confirm_no_{user['id']}"):
+                                st.session_state[f'confirm_delete_{user["id"]}'] = False
+                                st.rerun()
+        else:
+            st.info("No users found.")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: gray;'>
+💡 Multi-Stage Approval System: HR Entry → Stage 1 (Brand Head) → Stage 2 (Senior Manager) → Stage 3 (Accounts Payment) | 🔐 Role-based access control enabled
+</div>
+""", unsafe_allow_html=True)
