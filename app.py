@@ -51,55 +51,18 @@ USER_ROLES = {
 
 # Brand list
 BRANDS = [
-    "", "FundoBaBa", "Salary Adda", "FastPaise", "SnapPaisa", "Salary 4 Sure",
+    "FundoBaBa", "Salary Adda", "FastPaise", "SnapPaisa", "Salary 4 Sure",
     "Duniya Finance", "Tejas", "BlinkR", "Salary Setu", "Qua Loans",
     "Paisa Pop", "Salary 4 You", "Rupee Hype", "Minutes Loan", "Squid Loan",
     "Zepto", "Paisa on Salary", "Jhatpat"
 ]
 
-# Expense categories with sub-categories
-CATEGORIES = {
-    "Marketing": [
-        "Digital Ads", "Social Media", "Content Creation", "SEO/SEM", 
-        "Email Marketing", "Events & Sponsorships", "Print Media", "Other"
-    ],
-    "Operations": [
-        "Customer Support", "Logistics", "Inventory", "Maintenance", 
-        "Quality Control", "Other"
-    ],
-    "Salaries": [
-        "Full-time Employees", "Part-time Employees", "Contractors", 
-        "Bonuses", "Overtime", "Other"
-    ],
-    "Technology": [
-        "Software Licenses", "Hardware", "Cloud Services", "Development", 
-        "IT Support", "Security", "Other"
-    ],
-    "Office Rent": [
-        "Monthly Rent", "Security Deposit", "Lease Renewal", "Other"
-    ],
-    "Utilities": [
-        "Electricity", "Water", "Internet", "Phone", "Other"
-    ],
-    "Travel": [
-        "Flight", "Hotel", "Local Transport", "Meals", "Other"
-    ],
-    "Professional Fees": [
-        "Legal", "Accounting", "Consulting", "Audit", "Other"
-    ],
-    "Commission": [
-        "Sales Commission", "Referral Commission", "Partner Commission", "Other"
-    ],
-    "Interest": [
-        "Bank Interest", "Loan Interest", "Other"
-    ],
-    "Petty Cash": [
-        "Stationery", "Refreshments", "Miscellaneous", "Other"
-    ],
-    "Other": [
-        "Miscellaneous", "Uncategorized"
-    ]
-}
+# Expense categories
+CATEGORIES = [
+    "Marketing", "Operations", "Salaries", "Technology", "Office Rent",
+    "Utilities", "Travel", "Professional Fees", "Commission", "Interest",
+    "Petty Cash", "Other"
+]
 
 PAYMENT_MODES = ["Cash", "Bank Transfer", "Cheque", "UPI", "Card", "Other"]
 
@@ -138,7 +101,6 @@ def init_db():
             date DATE NOT NULL,
             brand TEXT NOT NULL,
             category TEXT NOT NULL,
-            sub_category TEXT,
             amount REAL NOT NULL,
             description TEXT,
             added_by TEXT,
@@ -161,7 +123,7 @@ def init_db():
         )
     ''')
     
-    # Check if columns exist, add if not (for existing databases)
+    # Check if stage1_assigned_to column exists, add if not (for existing databases)
     c.execute("PRAGMA table_info(expenses)")
     columns = [col[1] for col in c.fetchall()]
     
@@ -170,14 +132,7 @@ def init_db():
             c.execute("ALTER TABLE expenses ADD COLUMN stage1_assigned_to TEXT")
             conn.commit()
         except sqlite3.OperationalError:
-            pass
-    
-    if 'sub_category' not in columns:
-        try:
-            c.execute("ALTER TABLE expenses ADD COLUMN sub_category TEXT")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
+            pass  # Column already exists
     
     conn.commit()
     conn.close()
@@ -261,13 +216,13 @@ def reset_user_password(user_id, new_password):
     conn.close()
 
 # Expense Functions
-def add_expense(date, brand, category, sub_category, amount, description, added_by, assigned_to=None):
+def add_expense(date, brand, category, amount, description, added_by, assigned_to=None):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     c.execute('''
-        INSERT INTO expenses (date, brand, category, sub_category, amount, description, added_by, stage1_assigned_to)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (date, brand, category, sub_category, amount, description, added_by, assigned_to))
+        INSERT INTO expenses (date, brand, category, amount, description, added_by, stage1_assigned_to)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (date, brand, category, amount, description, added_by, assigned_to))
     conn.commit()
     conn.close()
 
@@ -439,6 +394,34 @@ def get_overall_status(row):
     else:
         return '⏳ Stage 1 Approval Pending'
 
+def get_stage_status_display(row):
+    """Get formatted status display for all stages"""
+    # Stage 1 - Brand Head
+    if row['stage1_status'] == 'Approved':
+        s1 = "Brand Head: ✅ Approved"
+    elif row['stage1_status'] == 'Rejected':
+        s1 = "Brand Head: ❌ Rejected"
+    else:
+        s1 = "Brand Head: ⏳ Pending"
+    
+    # Stage 2 - Senior Manager
+    if row['stage2_status'] == 'Approved':
+        s2 = "Senior Manager: ✅ Approved"
+    elif row['stage2_status'] == 'Rejected':
+        s2 = "Senior Manager: ❌ Rejected"
+    else:
+        s2 = "Senior Manager: ⏳ Pending"
+    
+    # Stage 3 - Accounts
+    if row['stage3_status'] == 'Paid':
+        s3 = "Accounts: ✅ Paid"
+    elif row['stage3_status'] == 'Rejected':
+        s3 = "Accounts: ❌ Rejected"
+    else:
+        s3 = "Accounts: ⏳ Pending"
+    
+    return f"{s1} | {s2} | {s3}"
+
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -533,15 +516,7 @@ if page_clean == "Add Expense":
         with col1:
             expense_date = st.date_input("📅 Date", value=date.today())
             brand = st.selectbox("🏢 Brand", BRANDS)
-            
-            # Category selection
-            category = st.selectbox("📂 Category", [""] + list(CATEGORIES.keys()))
-            
-            # Sub-category selection (dynamically based on category)
-            if category and category != "":
-                sub_category = st.selectbox("📑 Sub-Category", [""] + CATEGORIES[category])
-            else:
-                sub_category = st.selectbox("📑 Sub-Category", [""], disabled=True)
+            category = st.selectbox("📂 Category", CATEGORIES)
         
         with col2:
             amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
@@ -561,11 +536,11 @@ if page_clean == "Add Expense":
         submitted = st.form_submit_button("✅ Add Expense", use_container_width=True, type="primary")
         
         if submitted:
-            if amount > 0 and added_by and assigned_to and category and sub_category:
-                add_expense(expense_date, brand, category, sub_category, amount, description, added_by, assigned_to)
+            if amount > 0 and added_by and assigned_to:
+                add_expense(expense_date, brand, category, amount, description, added_by, assigned_to)
                 st.success(f"🎉 Expense submitted successfully and assigned to {assigned_to}!")
             else:
-                st.error("⚠️ Please fill all required fields including category and sub-category!")
+                st.error("⚠️ Please fill all required fields!")
 
 # Page 2: My Expenses (HR View)
 elif page_clean == "My Expenses":
@@ -584,18 +559,106 @@ elif page_clean == "My Expenses":
         
         st.markdown("---")
         
-        display_df = my_expenses[[
-            'id', 'date', 'brand', 'category', 'sub_category', 'amount', 'description',
-            'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
-        ]].copy()
-        
-        # Add assigned_to column if it exists
-        if 'stage1_assigned_to' in my_expenses.columns:
-            display_df.insert(7, 'assigned_to', my_expenses['stage1_assigned_to'])
-        
-        display_df['amount'] = display_df['amount'].apply(lambda x: f"₹{x:,.2f}")
-        
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        # Display each expense with detailed status
+        for idx, row in my_expenses.iterrows():
+            status_display = get_stage_status_display(row)
+            
+            with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
+                # Basic Details
+                col1, col2, col3 = st.columns(3)
+                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                col2.metric("🏢 Brand", row['brand'])
+                col3.metric("📂 Category", row['category'])
+                
+                st.markdown(f"**📝 Description:** {row['description']}")
+                st.markdown(f"**📅 Expense Date:** {row['date']}")
+                st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
+                if pd.notna(row.get('stage1_assigned_to')):
+                    st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
+                
+                st.markdown("---")
+                
+                # Stage 1 Status
+                st.markdown("### 📋 Stage 1: Brand Head Approval")
+                col1, col2, col3 = st.columns(3)
+                
+                if row['stage1_status'] == 'Pending':
+                    col1.markdown("**Status:** ⏳ Pending")
+                    col2.markdown("**Approved By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage1_status'] == 'Approved':
+                    col1.markdown("**Status:** ✅ Approved")
+                    col2.markdown(f"**Approved By:** {row['stage1_approved_by']}")
+                    col3.markdown(f"**Date:** {row['stage1_approved_date']}")
+                    if pd.notna(row.get('stage1_remarks')) and row['stage1_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage1_remarks']}")
+                elif row['stage1_status'] == 'Rejected':
+                    col1.markdown("**Status:** ❌ Rejected")
+                    col2.markdown(f"**Rejected By:** {row['stage1_approved_by']}")
+                    col3.markdown(f"**Date:** {row['stage1_approved_date']}")
+                    if pd.notna(row.get('stage1_remarks')) and row['stage1_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage1_remarks']}")
+                
+                st.markdown("---")
+                
+                # Stage 2 Status
+                st.markdown("### 📋 Stage 2: Senior Manager Approval")
+                col1, col2, col3 = st.columns(3)
+                
+                if row['stage1_status'] != 'Approved':
+                    col1.markdown("**Status:** ⏸️ Awaiting Stage 1")
+                    col2.markdown("**Approved By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage2_status'] == 'Pending':
+                    col1.markdown("**Status:** ⏳ Pending")
+                    col2.markdown("**Approved By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage2_status'] == 'Approved':
+                    col1.markdown("**Status:** ✅ Approved")
+                    col2.markdown(f"**Approved By:** {row['stage2_approved_by']}")
+                    col3.markdown(f"**Date:** {row['stage2_approved_date']}")
+                    if pd.notna(row.get('stage2_remarks')) and row['stage2_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage2_remarks']}")
+                elif row['stage2_status'] == 'Rejected':
+                    col1.markdown("**Status:** ❌ Rejected")
+                    col2.markdown(f"**Rejected By:** {row['stage2_approved_by']}")
+                    col3.markdown(f"**Date:** {row['stage2_approved_date']}")
+                    if pd.notna(row.get('stage2_remarks')) and row['stage2_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage2_remarks']}")
+                
+                st.markdown("---")
+                
+                # Stage 3 Status (Payment)
+                st.markdown("### 📋 Stage 3: Accounts Payment")
+                col1, col2, col3 = st.columns(3)
+                
+                if row['stage1_status'] != 'Approved' or row['stage2_status'] != 'Approved':
+                    col1.markdown("**Status:** ⏸️ Awaiting Previous Approvals")
+                    col2.markdown("**Processed By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage3_status'] == 'Pending':
+                    col1.markdown("**Status:** ⏳ Payment Pending")
+                    col2.markdown("**Processed By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage3_status'] == 'Paid':
+                    col1.markdown("**Status:** ✅ Paid")
+                    col2.markdown(f"**Paid By:** {row['stage3_paid_by']}")
+                    col3.markdown(f"**Date:** {row['stage3_paid_date']}")
+                    if pd.notna(row.get('stage3_payment_mode')):
+                        st.markdown(f"**💳 Payment Mode:** {row['stage3_payment_mode']}")
+                    if pd.notna(row.get('stage3_transaction_ref')):
+                        st.markdown(f"**🔢 Transaction Ref:** {row['stage3_transaction_ref']}")
+                    if pd.notna(row.get('stage3_remarks')) and row['stage3_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage3_remarks']}")
+                elif row['stage3_status'] == 'Rejected':
+                    col1.markdown("**Status:** ❌ Rejected")
+                    col2.markdown(f"**Rejected By:** {row['stage3_paid_by']}")
+                    col3.markdown(f"**Date:** {row['stage3_paid_date']}")
+                    if pd.notna(row.get('stage3_remarks')) and row['stage3_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage3_remarks']}")
+                
+                st.markdown("---")
+                st.markdown(f"### 📊 **Overall Status: {row['Overall_Status']}**")
     else:
         st.info("📌 You haven't submitted any expenses yet.")
 
@@ -619,13 +682,14 @@ elif "Approval Stage 1" in page_clean:
             st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
             
             for idx, row in pending_expenses.iterrows():
-                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | {row['category']} - {row.get('sub_category', 'N/A')} | ₹{row['amount']:,.2f}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
                     col3.metric("📂 Category", row['category'])
                     
-                    st.markdown(f"**📑 Sub-Category:** {row.get('sub_category', 'N/A')}")
                     st.markdown(f"**📝 Description:** {row['description']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     if pd.notna(row.get('stage1_assigned_to')):
@@ -677,14 +741,14 @@ elif "Approval Stage 1" in page_clean:
             
             # Display table
             for idx, row in approved_expenses.iterrows():
-                status_icon = "✅" if row['stage1_status'] == 'Approved' else "❌"
-                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | {row['category']} - {row.get('sub_category', 'N/A')} | ₹{row['amount']:,.2f} | {row['stage1_status']}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
                     col3.metric("📂 Category", row['category'])
                     
-                    st.markdown(f"**📑 Sub-Category:** {row.get('sub_category', 'N/A')}")
                     st.markdown(f"**📝 Description:** {row['description']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
@@ -719,13 +783,14 @@ elif "Approval Stage 2" in page_clean:
             st.info(f"📌 You have **{len(pending_expenses)}** expense(s) pending approval")
             
             for idx, row in pending_expenses.iterrows():
-                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | {row['category']} - {row.get('sub_category', 'N/A')} | ₹{row['amount']:,.2f}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
                     col3.metric("📂 Category", row['category'])
                     
-                    st.markdown(f"**📑 Sub-Category:** {row.get('sub_category', 'N/A')}")
                     st.markdown(f"**📝 Description:** {row['description']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
@@ -782,14 +847,14 @@ elif "Approval Stage 2" in page_clean:
             
             # Display table
             for idx, row in approved_expenses.iterrows():
-                status_icon = "✅" if row['stage2_status'] == 'Approved' else "❌"
-                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | {row['category']} - {row.get('sub_category', 'N/A')} | ₹{row['amount']:,.2f} | {row['stage2_status']}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
                     col3.metric("📂 Category", row['category'])
                     
-                    st.markdown(f"**📑 Sub-Category:** {row.get('sub_category', 'N/A')}")
                     st.markdown(f"**📝 Description:** {row['description']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
@@ -828,13 +893,14 @@ elif "Approval Stage 3" in page_clean:
             st.info(f"📌 You have **{len(pending_expenses)}** expense(s) ready for payment")
             
             for idx, row in pending_expenses.iterrows():
-                with st.expander(f"🆔 ID: {row['id']} | {row['brand']} | {row['category']} - {row.get('sub_category', 'N/A')} | ₹{row['amount']:,.2f}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount to Pay", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
                     col3.metric("📂 Category", row['category'])
                     
-                    st.markdown(f"**📑 Sub-Category:** {row.get('sub_category', 'N/A')}")
                     st.markdown(f"**📝 Description:** {row['description']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
@@ -897,14 +963,14 @@ elif "Approval Stage 3" in page_clean:
             
             # Display table
             for idx, row in payment_history.iterrows():
-                status_icon = "✅" if row['stage3_status'] == 'Paid' else "❌"
-                with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | {row['category']} - {row.get('sub_category', 'N/A')} | ₹{row['amount']:,.2f} | {row['stage3_status']}"):
+                status_display = get_stage_status_display(row)
+                
+                with st.expander(f"ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {status_display}"):
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                     col2.metric("🏢 Brand", row['brand'])
                     col3.metric("📂 Category", row['category'])
                     
-                    st.markdown(f"**📑 Sub-Category:** {row.get('sub_category', 'N/A')}")
                     st.markdown(f"**📝 Description:** {row['description']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
@@ -943,36 +1009,12 @@ elif page_clean == "Dashboard":
         
         st.markdown("---")
         
-        # Charts row 1
-        col1, col2 = st.columns(2)
+        # Brand summary chart
+        brand_summary = df.groupby('brand')['amount'].sum().reset_index()
+        brand_summary = brand_summary.nlargest(10, 'amount')
         
-        with col1:
-            # Brand summary chart
-            brand_summary = df.groupby('brand')['amount'].sum().reset_index()
-            brand_summary = brand_summary.nlargest(10, 'amount')
-            
-            fig = px.bar(brand_summary, x='brand', y='amount', title='Top 10 Brands by Expense')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Category summary chart
-            category_summary = df.groupby('category')['amount'].sum().reset_index()
-            
-            fig = px.pie(category_summary, values='amount', names='category', title='Expenses by Category')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Sub-category breakdown
-        st.subheader("📑 Sub-Category Breakdown")
-        if 'sub_category' in df.columns:
-            subcategory_summary = df.groupby(['category', 'sub_category'])['amount'].sum().reset_index()
-            subcategory_summary = subcategory_summary.sort_values('amount', ascending=False).head(15)
-            
-            fig = px.bar(subcategory_summary, x='sub_category', y='amount', color='category',
-                        title='Top 15 Sub-Categories by Expense Amount',
-                        labels={'sub_category': 'Sub-Category', 'amount': 'Amount (₹)'})
-            st.plotly_chart(fig, use_container_width=True)
+        fig = px.bar(brand_summary, x='brand', y='amount', title='Top 10 Brands by Expense')
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("📌 No expenses recorded yet.")
 
@@ -993,13 +1035,13 @@ elif page_clean == "View All Expenses":
         st.markdown("---")
         
         display_df = df[[
-            'id', 'date', 'brand', 'category', 'sub_category', 'amount', 'description',
+            'id', 'date', 'brand', 'category', 'amount', 'description',
             'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
         ]].copy()
         
         # Add assigned_to column if it exists
         if 'stage1_assigned_to' in df.columns:
-            display_df.insert(7, 'assigned_to', df['stage1_assigned_to'])
+            display_df.insert(6, 'assigned_to', df['stage1_assigned_to'])
         
         st.dataframe(display_df, use_container_width=True, hide_index=True)
         
