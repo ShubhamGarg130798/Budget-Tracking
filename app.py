@@ -845,7 +845,7 @@ elif page_clean == "Change Password":
 # Footer
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #666; font-size: 0.9rem;'><strong>Brand Expense Tracker v2.0</strong> | Multi-Stage Approval System<br>HR Entry - Brand Head Approval - Senior Manager Approval - Accounts Payment</div>", unsafe_allow_html=True) col1:
+st.markdown('<div style="text-align: center; color: #666; font-size: 0.9rem;"><strong>Brand Expense Tracker v2.0</strong> | Multi-Stage Approval System<br>HR Entry - Brand Head Approval - Senior Manager Approval - Accounts Payment</div>', unsafe_allow_html=True) col1:
                 expense_date = st.date_input("📅 Expense Date", value=date.today())
                 brand = st.selectbox("🏢 Brand", BRANDS)
                 category = st.selectbox("📂 Category", CATEGORIES)
