@@ -529,18 +529,106 @@ elif page_clean == "My Expenses":
         
         st.markdown("---")
         
-        display_df = my_expenses[[
-            'id', 'date', 'brand', 'category', 'amount', 'description',
-            'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
-        ]].copy()
-        
-        # Add assigned_to column if it exists
-        if 'stage1_assigned_to' in my_expenses.columns:
-            display_df.insert(6, 'assigned_to', my_expenses['stage1_assigned_to'])
-        
-        display_df['amount'] = display_df['amount'].apply(lambda x: f"₹{x:,.2f}")
-        
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        # Display each expense with detailed status
+        for idx, row in my_expenses.iterrows():
+            status_icon = "✅" if row['stage3_status'] == 'Paid' else "⏳" if row['stage1_status'] == 'Pending' or row['stage2_status'] == 'Pending' or row['stage3_status'] == 'Pending' else "❌"
+            
+            with st.expander(f"{status_icon} ID: {row['id']} | {row['brand']} | ₹{row['amount']:,.2f} | {row['Overall_Status']}"):
+                # Basic Details
+                col1, col2, col3 = st.columns(3)
+                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                col2.metric("🏢 Brand", row['brand'])
+                col3.metric("📂 Category", row['category'])
+                
+                st.markdown(f"**📝 Description:** {row['description']}")
+                st.markdown(f"**📅 Expense Date:** {row['date']}")
+                st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
+                if pd.notna(row.get('stage1_assigned_to')):
+                    st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
+                
+                st.markdown("---")
+                
+                # Stage 1 Status
+                st.markdown("### 📋 Stage 1: Brand Head Approval")
+                col1, col2, col3 = st.columns(3)
+                
+                if row['stage1_status'] == 'Pending':
+                    col1.markdown("**Status:** ⏳ Pending")
+                    col2.markdown("**Approved By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage1_status'] == 'Approved':
+                    col1.markdown("**Status:** ✅ Approved")
+                    col2.markdown(f"**Approved By:** {row['stage1_approved_by']}")
+                    col3.markdown(f"**Date:** {row['stage1_approved_date']}")
+                    if pd.notna(row.get('stage1_remarks')) and row['stage1_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage1_remarks']}")
+                elif row['stage1_status'] == 'Rejected':
+                    col1.markdown("**Status:** ❌ Rejected")
+                    col2.markdown(f"**Rejected By:** {row['stage1_approved_by']}")
+                    col3.markdown(f"**Date:** {row['stage1_approved_date']}")
+                    if pd.notna(row.get('stage1_remarks')) and row['stage1_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage1_remarks']}")
+                
+                st.markdown("---")
+                
+                # Stage 2 Status
+                st.markdown("### 📋 Stage 2: Senior Manager Approval")
+                col1, col2, col3 = st.columns(3)
+                
+                if row['stage1_status'] != 'Approved':
+                    col1.markdown("**Status:** ⏸️ Awaiting Stage 1")
+                    col2.markdown("**Approved By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage2_status'] == 'Pending':
+                    col1.markdown("**Status:** ⏳ Pending")
+                    col2.markdown("**Approved By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage2_status'] == 'Approved':
+                    col1.markdown("**Status:** ✅ Approved")
+                    col2.markdown(f"**Approved By:** {row['stage2_approved_by']}")
+                    col3.markdown(f"**Date:** {row['stage2_approved_date']}")
+                    if pd.notna(row.get('stage2_remarks')) and row['stage2_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage2_remarks']}")
+                elif row['stage2_status'] == 'Rejected':
+                    col1.markdown("**Status:** ❌ Rejected")
+                    col2.markdown(f"**Rejected By:** {row['stage2_approved_by']}")
+                    col3.markdown(f"**Date:** {row['stage2_approved_date']}")
+                    if pd.notna(row.get('stage2_remarks')) and row['stage2_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage2_remarks']}")
+                
+                st.markdown("---")
+                
+                # Stage 3 Status (Payment)
+                st.markdown("### 📋 Stage 3: Accounts Payment")
+                col1, col2, col3 = st.columns(3)
+                
+                if row['stage1_status'] != 'Approved' or row['stage2_status'] != 'Approved':
+                    col1.markdown("**Status:** ⏸️ Awaiting Previous Approvals")
+                    col2.markdown("**Processed By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage3_status'] == 'Pending':
+                    col1.markdown("**Status:** ⏳ Payment Pending")
+                    col2.markdown("**Processed By:** -")
+                    col3.markdown("**Date:** -")
+                elif row['stage3_status'] == 'Paid':
+                    col1.markdown("**Status:** ✅ Paid")
+                    col2.markdown(f"**Paid By:** {row['stage3_paid_by']}")
+                    col3.markdown(f"**Date:** {row['stage3_paid_date']}")
+                    if pd.notna(row.get('stage3_payment_mode')):
+                        st.markdown(f"**💳 Payment Mode:** {row['stage3_payment_mode']}")
+                    if pd.notna(row.get('stage3_transaction_ref')):
+                        st.markdown(f"**🔢 Transaction Ref:** {row['stage3_transaction_ref']}")
+                    if pd.notna(row.get('stage3_remarks')) and row['stage3_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage3_remarks']}")
+                elif row['stage3_status'] == 'Rejected':
+                    col1.markdown("**Status:** ❌ Rejected")
+                    col2.markdown(f"**Rejected By:** {row['stage3_paid_by']}")
+                    col3.markdown(f"**Date:** {row['stage3_paid_date']}")
+                    if pd.notna(row.get('stage3_remarks')) and row['stage3_remarks']:
+                        st.markdown(f"**💬 Remarks:** {row['stage3_remarks']}")
+                
+                st.markdown("---")
+                st.markdown(f"### 📊 **Overall Status: {row['Overall_Status']}**")
     else:
         st.info("📌 You haven't submitted any expenses yet.")
 
