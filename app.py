@@ -123,6 +123,17 @@ def init_db():
         )
     ''')
     
+    # Check if stage1_assigned_to column exists, add if not (for existing databases)
+    c.execute("PRAGMA table_info(expenses)")
+    columns = [col[1] for col in c.fetchall()]
+    
+    if 'stage1_assigned_to' not in columns:
+        try:
+            c.execute("ALTER TABLE expenses ADD COLUMN stage1_assigned_to TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+    
     conn.commit()
     conn.close()
 
@@ -508,6 +519,11 @@ elif page_clean == "My Expenses":
             'id', 'date', 'brand', 'category', 'amount', 'description',
             'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
         ]].copy()
+        
+        # Add assigned_to column if it exists
+        if 'stage1_assigned_to' in my_expenses.columns:
+            display_df.insert(6, 'assigned_to', my_expenses['stage1_assigned_to'])
+        
         display_df['amount'] = display_df['amount'].apply(lambda x: f"₹{x:,.2f}")
         
         st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -537,7 +553,8 @@ elif "Approval Stage 1" in page_clean:
                 
                 st.markdown(f"**📝 Description:** {row['description']}")
                 st.markdown(f"**👤 Submitted By:** {row['added_by']}")
-                st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
+                if pd.notna(row.get('stage1_assigned_to')):
+                    st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
                 
                 remarks = st.text_area("💬 Remarks", key=f"remarks_s1_{row['id']}")
                 
@@ -693,6 +710,10 @@ elif page_clean == "View All Expenses":
             'id', 'date', 'brand', 'category', 'amount', 'description',
             'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
         ]].copy()
+        
+        # Add assigned_to column if it exists
+        if 'stage1_assigned_to' in df.columns:
+            display_df.insert(6, 'assigned_to', df['stage1_assigned_to'])
         
         st.dataframe(display_df, use_container_width=True, hide_index=True)
         
