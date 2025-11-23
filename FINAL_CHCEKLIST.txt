@@ -1,8 +1,3 @@
-# 🚀 READY TO DEPLOY - Final Checklist
-
-## ✅ Your App is Ready!
-
-Your 18 brands have been added:
 1. Fundobaba
 2. Fastpaisa
 3. Snap Paisa
@@ -22,11 +17,7 @@ Your 18 brands have been added:
 17. Rupee Hype
 18. Minutes Loan
 
----
 
-## 📋 DEPLOYMENT STEPS
-
-### 1. Create GitHub Repository
 - Repository name: `expense-tracker` (or your choice)
 - Set to: **Public**
 - Add README: ✅ (optional)
