@@ -534,18 +534,33 @@ page_clean = page.split(" ", 1)[1] if " " in page else page
 if page_clean == "Add Expense":
     st.header("➕ Add New Expense")
     
+    # Category and Subcategory selection OUTSIDE form for dynamic updates
+    st.subheader("📂 Select Category")
+    col1, col2 = st.columns(2)
+    with col1:
+        category = st.selectbox("Category *", options=list(CATEGORIES.keys()), key="expense_category")
+    
+    with col2:
+        # Subcategory selection (conditional based on category)
+        if CATEGORIES[category]:  # If subcategories exist for selected category
+            subcategory = st.selectbox("Subcategory *", options=CATEGORIES[category], key="expense_subcategory")
+        else:
+            st.info(f"ℹ️ No subcategories for {category}")
+            subcategory = None
+    
+    st.markdown("---")
+    st.subheader("📝 Expense Details")
+    
+    # Rest of the form
     with st.form("expense_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         
         with col1:
             expense_date = st.date_input("📅 Date", value=date.today())
             brand = st.selectbox("🏢 Brand", BRANDS)
-            
-            # Category selection
-            category = st.selectbox("📂 Category *", options=list(CATEGORIES.keys()))
+            amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
         
         with col2:
-            amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
             added_by = st.text_input("👤 Added By", value=st.session_state.full_name)
             
             # Get brand heads for assignment
@@ -557,13 +572,6 @@ if page_clean == "Add Expense":
                 st.warning("⚠️ No Brand Heads available. Please contact admin.")
                 assigned_to = None
         
-        # Subcategory selection (conditional based on category) - placed after both columns
-        subcategory = None
-        if CATEGORIES[category]:  # If subcategories exist for selected category
-            subcategory = st.selectbox("📑 Subcategory *", options=CATEGORIES[category])
-        else:
-            st.info(f"ℹ️ No subcategories available for {category}")
-        
         description = st.text_area("📝 Description", placeholder="Enter expense details...")
         
         submitted = st.form_submit_button("✅ Add Expense", use_container_width=True, type="primary")
@@ -572,6 +580,7 @@ if page_clean == "Add Expense":
             if amount > 0 and added_by and assigned_to:
                 add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to)
                 st.success(f"🎉 Expense submitted successfully and assigned to {assigned_to}!")
+                st.balloons()
             else:
                 st.error("⚠️ Please fill all required fields!")
 
