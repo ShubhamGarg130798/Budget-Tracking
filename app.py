@@ -6,6 +6,7 @@ import io
 import plotly.express as px
 import plotly.graph_objects as go
 import hashlib
+import time
 
 # Page configuration
 st.set_page_config(
@@ -617,6 +618,7 @@ if page_clean == "Add Expense":
                 
                 add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype)
                 st.toast("✅ Expense has been added successfully!", icon="✅")
+                time.sleep(1)
                 st.rerun()
             else:
                 st.error("⚠️ Please fill all required fields!")
@@ -690,6 +692,7 @@ elif page_clean == "My Expenses":
                         bill_data = uploaded_bill.read()
                         update_expense_bill(row['id'], bill_data, uploaded_bill.name, uploaded_bill.type)
                         st.toast("✅ Bill has been uploaded successfully!", icon="✅")
+                        time.sleep(1)
                         st.rerun()
                 
                 st.markdown("---")
@@ -839,6 +842,7 @@ elif "Approval Stage 1" in page_clean:
                         if st.button("✅ Approve", key=f"approve_s1_{row['id']}", type="primary", use_container_width=True):
                             approve_expense_stage1(row['id'], st.session_state.full_name, 'Approved', remarks)
                             st.toast("✅ Expense has been approved successfully!", icon="✅")
+                            time.sleep(1)
                             st.rerun()
                     
                     with col2:
@@ -846,6 +850,7 @@ elif "Approval Stage 1" in page_clean:
                             if remarks:
                                 approve_expense_stage1(row['id'], st.session_state.full_name, 'Rejected', remarks)
                                 st.toast("❌ Expense has been rejected successfully!", icon="❌")
+                                time.sleep(1)
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Please provide remarks for rejection")
@@ -965,6 +970,7 @@ elif "Approval Stage 2" in page_clean:
                         if st.button("✅ Approve", key=f"approve_s2_{row['id']}", type="primary", use_container_width=True):
                             approve_expense_stage2(row['id'], st.session_state.full_name, 'Approved', remarks)
                             st.toast("✅ Expense has been approved successfully!", icon="✅")
+                            time.sleep(1)
                             st.rerun()
                     
                     with col2:
@@ -972,6 +978,7 @@ elif "Approval Stage 2" in page_clean:
                             if remarks:
                                 approve_expense_stage2(row['id'], st.session_state.full_name, 'Rejected', remarks)
                                 st.toast("❌ Expense has been rejected successfully!", icon="❌")
+                                time.sleep(1)
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Please provide remarks for rejection")
@@ -1101,6 +1108,7 @@ elif "Approval Stage 3" in page_clean:
                                 approve_expense_stage3(row['id'], st.session_state.full_name, 'Paid', 
                                                      payment_mode, transaction_ref, remarks)
                                 st.toast("✅ Expense has been paid successfully!", icon="✅")
+                                time.sleep(1)
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Please provide transaction reference")
@@ -1111,6 +1119,7 @@ elif "Approval Stage 3" in page_clean:
                                 approve_expense_stage3(row['id'], st.session_state.full_name, 'Rejected', 
                                                      None, None, remarks)
                                 st.toast("❌ Payment has been rejected successfully!", icon="❌")
+                                time.sleep(1)
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Please provide remarks for rejection")
@@ -1285,6 +1294,7 @@ elif page_clean == "View All Expenses":
                         bill_data = uploaded_bill.read()
                         update_expense_bill(row['id'], bill_data, uploaded_bill.name, uploaded_bill.type)
                         st.toast("✅ Bill has been uploaded successfully!", icon="✅")
+                        time.sleep(1)
                         st.rerun()
                 
                 st.markdown("---")
