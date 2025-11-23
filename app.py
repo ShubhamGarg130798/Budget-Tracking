@@ -96,7 +96,7 @@ def init_db():
         )
     ''')
     
-    # Create default admin user if not exists
+    # default admin user
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
         admin_password = hashlib.sha256('admin123'.encode()).hexdigest()
@@ -138,7 +138,7 @@ def init_db():
         )
     ''')
     
-    # Check if columns exist, add if not (for existing databases)
+    # 
     c.execute("PRAGMA table_info(expenses)")
     columns = [col[1] for col in c.fetchall()]
     
@@ -168,7 +168,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Initialize database
+# database
 init_db()
 
 # User Management Functions
@@ -292,7 +292,7 @@ def change_password(username, old_password, new_password):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     
-    # Check if old password is correct
+    # old password 
     c.execute("SELECT id FROM users WHERE username = ? AND password = ?", (username, old_hashed))
     if not c.fetchone():
         conn.close()
@@ -477,7 +477,7 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Data')
     return output.getvalue()
 
-# Initialize session state
+# Initialize session 
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
@@ -514,7 +514,7 @@ if not st.session_state.logged_in:
     
     st.stop()
 
-# Main App (After Login)
+#  (After Login)
 st.title("💰 Brand Expense Tracker")
 
 col1, col2 = st.columns([3, 1])
@@ -552,14 +552,14 @@ if st.session_state.user_role == "admin":
 
 page = st.sidebar.selectbox("📌 Navigation", page_options)
 
-# Remove emoji from page name
+# 
 page_clean = page.split(" ", 1)[1] if " " in page else page
 
 # Page 1: Add Expense
 if page_clean == "Add Expense":
     st.header("➕ Add New Expense")
     
-    # Category and Subcategory selection OUTSIDE form for dynamic updates
+    # Category and Subcategory selection
     st.subheader("📂 Select Category")
     col1, col2 = st.columns(2)
     with col1:
@@ -863,11 +863,11 @@ elif "Approval Stage 1" in page_clean:
         approved_expenses = get_approved_expenses_by_user(st.session_state.full_name, 1)
         
         if not approved_expenses.empty:
-            # Add overall status and category display
+            # overall status and category display
             approved_expenses['Overall_Status'] = approved_expenses.apply(get_overall_status, axis=1)
             approved_expenses['Category_Display'] = approved_expenses.apply(get_category_display, axis=1)
             
-            # Summary metrics
+            # Summary 
             col1, col2, col3, col4 = st.columns(4)
             total_approved = len(approved_expenses[approved_expenses['stage1_status'] == 'Approved'])
             total_rejected = len(approved_expenses[approved_expenses['stage1_status'] == 'Rejected'])
@@ -995,7 +995,7 @@ elif "Approval Stage 2" in page_clean:
             approved_expenses['Overall_Status'] = approved_expenses.apply(get_overall_status, axis=1)
             approved_expenses['Category_Display'] = approved_expenses.apply(get_category_display, axis=1)
             
-            # Summary metrics
+            # Summary 
             col1, col2, col3, col4 = st.columns(4)
             total_approved = len(approved_expenses[approved_expenses['stage2_status'] == 'Approved'])
             total_rejected = len(approved_expenses[approved_expenses['stage2_status'] == 'Rejected'])
@@ -1008,7 +1008,7 @@ elif "Approval Stage 2" in page_clean:
             
             st.markdown("---")
             
-            # Display table
+            # table
             for idx, row in approved_expenses.iterrows():
                 status_display = get_stage_status_display(row)
                 
@@ -1457,7 +1457,7 @@ elif page_clean == "View All Expenses":
                     else:
                         st.info("ℹ️ No bill/document uploaded yet")
                     
-                    # Allow uploading bill if not present or updating
+                    # Allow uploading bill if not present 
                     st.markdown("**Upload/Update Bill:**")
                     uploaded_bill = st.file_uploader(
                         "Upload Bill/Document (PDF or Image)", 
