@@ -1188,35 +1188,113 @@ elif page_clean == "Dashboard":
         df['Overall_Status'] = df.apply(get_overall_status, axis=1)
         df['Category_Display'] = df.apply(get_category_display, axis=1)
         
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("💵 Total Expenses", f"₹{df['amount'].sum():,.2f}")
-        col2.metric("📝 Total Transactions", len(df))
-        col3.metric("✅ Paid", len(df[df['stage3_status'] == 'Paid']))
-        col4.metric("⏳ Pending", len(df[df['stage3_status'] == 'Pending']))
+        # Filters Section
+        st.subheader("🔍 Filters")
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            # Brand filter
+            all_brands = ["All"] + sorted(df['brand'].unique().tolist())
+            selected_brand = st.selectbox("🏢 Brand", all_brands, key="dash_brand_filter")
+        
+        with col2:
+            # Status filter
+            status_options = ["All", "Pending", "Paid", "Rejected"]
+            selected_status = st.selectbox("📊 Status", status_options, key="dash_status_filter")
+        
+        with col3:
+            # Category filter
+            all_categories = ["All"] + sorted(df['category'].unique().tolist())
+            selected_category = st.selectbox("📂 Category", all_categories, key="dash_category_filter")
+        
+        with col4:
+            # Subcategory filter (based on selected category)
+            if selected_category != "All":
+                filtered_subcats = df[df['category'] == selected_category]['subcategory'].dropna().unique().tolist()
+                all_subcategories = ["All"] + sorted(filtered_subcats) if filtered_subcats else ["All"]
+            else:
+                all_subcategories = ["All"] + sorted(df['subcategory'].dropna().unique().tolist())
+            selected_subcategory = st.selectbox("📑 Subcategory", all_subcategories, key="dash_subcat_filter")
+        
+        with col5:
+            # Date range filter
+            date_filter = st.selectbox("📅 Date Range", ["All Time", "Custom Range"], key="dash_date_filter")
+        
+        # Date range picker (if custom selected)
+        if date_filter == "Custom Range":
+            col_date1, col_date2 = st.columns(2)
+            with col_date1:
+                start_date = st.date_input("Start Date", value=pd.to_datetime(df['date'].min()), key="dash_start_date")
+            with col_date2:
+                end_date = st.date_input("End Date", value=pd.to_datetime(df['date'].max()), key="dash_end_date")
         
         st.markdown("---")
         
-        # Charts in two columns
-        col1, col2 = st.columns(2)
+        # Apply filters
+        filtered_df = df.copy()
         
-        with col1:
-            # Brand summary chart
-            brand_summary = df.groupby('brand')['amount'].sum().reset_index()
-            brand_summary = brand_summary.nlargest(10, 'amount')
-            
-            fig = px.bar(brand_summary, x='brand', y='amount', 
-                        title='Top 10 Brands by Expense',
-                        labels={'amount': 'Amount (₹)', 'brand': 'Brand'})
-            st.plotly_chart(fig, use_container_width=True)
+        if selected_brand != "All":
+            filtered_df = filtered_df[filtered_df['brand'] == selected_brand]
         
-        with col2:
-            # Category summary chart
-            category_summary = df.groupby('category')['amount'].sum().reset_index()
-            category_summary = category_summary.nlargest(10, 'amount')
+        if selected_status != "All":
+            if selected_status == "Pending":
+                filtered_df = filtered_df[filtered_df['stage3_status'] == 'Pending']
+            elif selected_status == "Paid":
+                filtered_df = filtered_df[filtered_df['stage3_status'] == 'Paid']
+            elif selected_status == "Rejected":
+                filtered_df = filtered_df[
+                    (filtered_df['stage1_status'] == 'Rejected') | 
+                    (filtered_df['stage2_status'] == 'Rejected') | 
+                    (filtered_df['stage3_status'] == 'Rejected')
+                ]
+        
+        if selected_category != "All":
+            filtered_df = filtered_df[filtered_df['category'] == selected_category]
+        
+        if selected_subcategory != "All":
+            filtered_df = filtered_df[filtered_df['subcategory'] == selected_subcategory]
+        
+        if date_filter == "Custom Range":
+            filtered_df['date'] = pd.to_datetime(filtered_df['date'])
+            filtered_df = filtered_df[
+                (filtered_df['date'] >= pd.to_datetime(start_date)) & 
+                (filtered_df['date'] <= pd.to_datetime(end_date))
+            ]
+        
+        # Display metrics for filtered data
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("💵 Total Expenses", f"₹{filtered_df['amount'].sum():,.2f}")
+        col2.metric("📝 Total Transactions", len(filtered_df))
+        col3.metric("✅ Paid", len(filtered_df[filtered_df['stage3_status'] == 'Paid']))
+        col4.metric("⏳ Pending", len(filtered_df[filtered_df['stage3_status'] == 'Pending']))
+        
+        st.markdown("---")
+        
+        if not filtered_df.empty:
+            # Charts in two columns
+            col1, col2 = st.columns(2)
             
-            fig = px.pie(category_summary, values='amount', names='category',
-                        title='Expense Distribution by Category')
-            st.plotly_chart(fig, use_container_width=True)
+            with col1:
+                # Brand summary chart
+                brand_summary = filtered_df.groupby('brand')['amount'].sum().reset_index()
+                brand_summary = brand_summary.nlargest(10, 'amount')
+                
+                fig = px.bar(brand_summary, x='brand', y='amount', 
+                            title='Top 10 Brands by Expense',
+                            labels={'amount': 'Amount (₹)', 'brand': 'Brand'})
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Category summary chart
+                category_summary = filtered_df.groupby('category')['amount'].sum().reset_index()
+                category_summary = category_summary.nlargest(10, 'amount')
+                
+                fig = px.pie(category_summary, values='amount', names='category',
+                            title='Expense Distribution by Category')
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("📌 No expenses match the selected filters.")
     else:
         st.info("📌 No expenses recorded yet.")
 
@@ -1230,138 +1308,216 @@ elif page_clean == "View All Expenses":
         df['Overall_Status'] = df.apply(get_overall_status, axis=1)
         df['Category_Display'] = df.apply(get_category_display, axis=1)
         
+        # Filters Section
+        st.subheader("🔍 Filters")
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            # Brand filter
+            all_brands = ["All"] + sorted(df['brand'].unique().tolist())
+            selected_brand = st.selectbox("🏢 Brand", all_brands, key="view_brand_filter")
+        
+        with col2:
+            # Status filter
+            status_options = ["All", "Pending", "Paid", "Rejected"]
+            selected_status = st.selectbox("📊 Status", status_options, key="view_status_filter")
+        
+        with col3:
+            # Category filter
+            all_categories = ["All"] + sorted(df['category'].unique().tolist())
+            selected_category = st.selectbox("📂 Category", all_categories, key="view_category_filter")
+        
+        with col4:
+            # Subcategory filter (based on selected category)
+            if selected_category != "All":
+                filtered_subcats = df[df['category'] == selected_category]['subcategory'].dropna().unique().tolist()
+                all_subcategories = ["All"] + sorted(filtered_subcats) if filtered_subcats else ["All"]
+            else:
+                all_subcategories = ["All"] + sorted(df['subcategory'].dropna().unique().tolist())
+            selected_subcategory = st.selectbox("📑 Subcategory", all_subcategories, key="view_subcat_filter")
+        
+        with col5:
+            # Date range filter
+            date_filter = st.selectbox("📅 Date Range", ["All Time", "Custom Range"], key="view_date_filter")
+        
+        # Date range picker (if custom selected)
+        if date_filter == "Custom Range":
+            col_date1, col_date2 = st.columns(2)
+            with col_date1:
+                start_date = st.date_input("Start Date", value=pd.to_datetime(df['date'].min()), key="view_start_date")
+            with col_date2:
+                end_date = st.date_input("End Date", value=pd.to_datetime(df['date'].max()), key="view_end_date")
+        
+        st.markdown("---")
+        
+        # Apply filters
+        filtered_df = df.copy()
+        
+        if selected_brand != "All":
+            filtered_df = filtered_df[filtered_df['brand'] == selected_brand]
+        
+        if selected_status != "All":
+            if selected_status == "Pending":
+                filtered_df = filtered_df[filtered_df['stage3_status'] == 'Pending']
+            elif selected_status == "Paid":
+                filtered_df = filtered_df[filtered_df['stage3_status'] == 'Paid']
+            elif selected_status == "Rejected":
+                filtered_df = filtered_df[
+                    (filtered_df['stage1_status'] == 'Rejected') | 
+                    (filtered_df['stage2_status'] == 'Rejected') | 
+                    (filtered_df['stage3_status'] == 'Rejected')
+                ]
+        
+        if selected_category != "All":
+            filtered_df = filtered_df[filtered_df['category'] == selected_category]
+        
+        if selected_subcategory != "All":
+            filtered_df = filtered_df[filtered_df['subcategory'] == selected_subcategory]
+        
+        if date_filter == "Custom Range":
+            filtered_df['date'] = pd.to_datetime(filtered_df['date'])
+            filtered_df = filtered_df[
+                (filtered_df['date'] >= pd.to_datetime(start_date)) & 
+                (filtered_df['date'] <= pd.to_datetime(end_date))
+            ]
+        
+        # Display metrics
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("💵 Total", f"₹{df['amount'].sum():,.2f}")
-        col2.metric("📝 Count", len(df))
-        col3.metric("✅ Paid", len(df[df['stage3_status'] == 'Paid']))
-        col4.metric("📎 With Bills", len(df[df['bill_filename'].notna()]))
+        col1.metric("💵 Total", f"₹{filtered_df['amount'].sum():,.2f}")
+        col2.metric("📝 Count", len(filtered_df))
+        col3.metric("✅ Paid", len(filtered_df[filtered_df['stage3_status'] == 'Paid']))
+        col4.metric("📎 With Bills", len(filtered_df[filtered_df['bill_filename'].notna()]))
         
         st.markdown("---")
         
-        # Expandable view for each expense
-        st.subheader("📋 Detailed Expense Records")
-        
-        for idx, row in df.iterrows():
-            has_bill = pd.notna(row.get('bill_filename'))
-            bill_icon = "📎" if has_bill else "📄"
+        if not filtered_df.empty:
+            # Expandable view for each expense
+            st.subheader("📋 Detailed Expense Records")
             
-            with st.expander(f"{bill_icon} ID: {row['id']} | {row['brand']} | {row['Category_Display']} | ₹{row['amount']:,.2f} | {row['Overall_Status']}"):
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
-                col2.metric("🏢 Brand", row['brand'])
-                col3.metric("📂 Category", row['Category_Display'])
-                col4.metric("📊 Status", row['Overall_Status'])
+            for idx, row in filtered_df.iterrows():
+                has_bill = pd.notna(row.get('bill_filename'))
+                bill_icon = "📎" if has_bill else "📄"
                 
-                st.markdown(f"**📝 Description:** {row['description']}")
-                st.markdown(f"**👤 Submitted By:** {row['added_by']}")
-                st.markdown(f"**📅 Expense Date:** {row['date']}")
-                st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
-                
-                if pd.notna(row.get('stage1_assigned_to')):
-                    st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
-                
-                st.markdown("---")
-                
-                # Bill/Document Section
-                st.markdown("### 📎 Bill/Document")
-                
-                if has_bill:
-                    col1, col2 = st.columns([2, 1])
-                    with col1:
-                        st.success(f"✅ Document uploaded: **{row['bill_filename']}**")
-                    with col2:
-                        if st.download_button(
-                            label="📥 Download Bill",
-                            data=row['bill_document'],
-                            file_name=row['bill_filename'],
-                            mime=row['bill_filetype'],
-                            key=f"download_bill_{row['id']}"
-                        ):
-                            st.success("Downloaded!")
-                else:
-                    st.info("ℹ️ No bill/document uploaded yet")
-                
-                # Allow uploading bill if not present or updating
-                st.markdown("**Upload/Update Bill:**")
-                uploaded_bill = st.file_uploader(
-                    "Upload Bill/Document (PDF or Image)", 
-                    type=['pdf', 'png', 'jpg', 'jpeg'],
-                    key=f"upload_bill_{row['id']}"
-                )
-                
-                if uploaded_bill is not None:
-                    if st.button(f"💾 Save Bill", key=f"save_bill_{row['id']}", type="primary"):
-                        bill_data = uploaded_bill.read()
-                        update_expense_bill(row['id'], bill_data, uploaded_bill.name, uploaded_bill.type)
-                        st.toast("✅ Bill has been uploaded successfully!", icon="✅")
-                        time.sleep(1)
-                        st.rerun()
-                
-                st.markdown("---")
-                
-                # Approval Status
-                st.markdown("### 📋 Approval Status")
-                status_col1, status_col2, status_col3 = st.columns(3)
-                
-                with status_col1:
-                    st.markdown("**Stage 1: Brand Head**")
-                    if row['stage1_status'] == 'Approved':
-                        st.success("✅ Approved")
-                        st.caption(f"By: {row['stage1_approved_by']}")
-                    elif row['stage1_status'] == 'Rejected':
-                        st.error("❌ Rejected")
-                        st.caption(f"By: {row['stage1_approved_by']}")
+                with st.expander(f"{bill_icon} ID: {row['id']} | {row['brand']} | {row['Category_Display']} | ₹{row['amount']:,.2f} | {row['Overall_Status']}"):
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                    col2.metric("🏢 Brand", row['brand'])
+                    col3.metric("📂 Category", row['Category_Display'])
+                    col4.metric("📊 Status", row['Overall_Status'])
+                    
+                    st.markdown(f"**📝 Description:** {row['description']}")
+                    st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                    st.markdown(f"**📅 Expense Date:** {row['date']}")
+                    st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
+                    
+                    if pd.notna(row.get('stage1_assigned_to')):
+                        st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
+                    
+                    st.markdown("---")
+                    
+                    # Bill/Document Section
+                    st.markdown("### 📎 Bill/Document")
+                    
+                    if has_bill:
+                        col1, col2 = st.columns([2, 1])
+                        with col1:
+                            st.success(f"✅ Document uploaded: **{row['bill_filename']}**")
+                        with col2:
+                            if st.download_button(
+                                label="📥 Download Bill",
+                                data=row['bill_document'],
+                                file_name=row['bill_filename'],
+                                mime=row['bill_filetype'],
+                                key=f"download_bill_{row['id']}"
+                            ):
+                                st.success("Downloaded!")
                     else:
-                        st.warning("⏳ Pending")
-                
-                with status_col2:
-                    st.markdown("**Stage 2: Senior Manager**")
-                    if row['stage2_status'] == 'Approved':
-                        st.success("✅ Approved")
-                        st.caption(f"By: {row['stage2_approved_by']}")
-                    elif row['stage2_status'] == 'Rejected':
-                        st.error("❌ Rejected")
-                        st.caption(f"By: {row['stage2_approved_by']}")
-                    else:
-                        st.warning("⏳ Pending")
-                
-                with status_col3:
-                    st.markdown("**Stage 3: Accounts**")
-                    if row['stage3_status'] == 'Paid':
-                        st.success("✅ Paid")
-                        st.caption(f"By: {row['stage3_paid_by']}")
-                        if pd.notna(row.get('stage3_payment_mode')):
-                            st.caption(f"Mode: {row['stage3_payment_mode']}")
-                    elif row['stage3_status'] == 'Rejected':
-                        st.error("❌ Rejected")
-                        st.caption(f"By: {row['stage3_paid_by']}")
-                    else:
-                        st.warning("⏳ Pending")
-        
-        st.markdown("---")
-        st.subheader("📊 Summary Table")
-        
-        display_df = df[[
-            'id', 'date', 'brand', 'Category_Display', 'amount', 'description',
-            'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
-        ]].copy()
-        
-        # Add bill status column
-        display_df['has_bill'] = df['bill_filename'].notna().apply(lambda x: '✅' if x else '❌')
-        
-        # Add assigned_to column if it exists
-        if 'stage1_assigned_to' in df.columns:
-            display_df.insert(6, 'assigned_to', df['stage1_assigned_to'])
-        
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-        excel_data = to_excel(df)
-        st.download_button(
-            label="📥 Download Excel",
-            data=excel_data,
-            file_name=f"expenses_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+                        st.info("ℹ️ No bill/document uploaded yet")
+                    
+                    # Allow uploading bill if not present or updating
+                    st.markdown("**Upload/Update Bill:**")
+                    uploaded_bill = st.file_uploader(
+                        "Upload Bill/Document (PDF or Image)", 
+                        type=['pdf', 'png', 'jpg', 'jpeg'],
+                        key=f"upload_bill_{row['id']}"
+                    )
+                    
+                    if uploaded_bill is not None:
+                        if st.button(f"💾 Save Bill", key=f"save_bill_{row['id']}", type="primary"):
+                            bill_data = uploaded_bill.read()
+                            update_expense_bill(row['id'], bill_data, uploaded_bill.name, uploaded_bill.type)
+                            st.toast("✅ Bill has been uploaded successfully!", icon="✅")
+                            time.sleep(1)
+                            st.rerun()
+                    
+                    st.markdown("---")
+                    
+                    # Approval Status
+                    st.markdown("### 📋 Approval Status")
+                    status_col1, status_col2, status_col3 = st.columns(3)
+                    
+                    with status_col1:
+                        st.markdown("**Stage 1: Brand Head**")
+                        if row['stage1_status'] == 'Approved':
+                            st.success("✅ Approved")
+                            st.caption(f"By: {row['stage1_approved_by']}")
+                        elif row['stage1_status'] == 'Rejected':
+                            st.error("❌ Rejected")
+                            st.caption(f"By: {row['stage1_approved_by']}")
+                        else:
+                            st.warning("⏳ Pending")
+                    
+                    with status_col2:
+                        st.markdown("**Stage 2: Senior Manager**")
+                        if row['stage2_status'] == 'Approved':
+                            st.success("✅ Approved")
+                            st.caption(f"By: {row['stage2_approved_by']}")
+                        elif row['stage2_status'] == 'Rejected':
+                            st.error("❌ Rejected")
+                            st.caption(f"By: {row['stage2_approved_by']}")
+                        else:
+                            st.warning("⏳ Pending")
+                    
+                    with status_col3:
+                        st.markdown("**Stage 3: Accounts**")
+                        if row['stage3_status'] == 'Paid':
+                            st.success("✅ Paid")
+                            st.caption(f"By: {row['stage3_paid_by']}")
+                            if pd.notna(row.get('stage3_payment_mode')):
+                                st.caption(f"Mode: {row['stage3_payment_mode']}")
+                        elif row['stage3_status'] == 'Rejected':
+                            st.error("❌ Rejected")
+                            st.caption(f"By: {row['stage3_paid_by']}")
+                        else:
+                            st.warning("⏳ Pending")
+            
+            st.markdown("---")
+            st.subheader("📊 Summary Table")
+            
+            display_df = filtered_df[[
+                'id', 'date', 'brand', 'Category_Display', 'amount', 'description',
+                'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
+            ]].copy()
+            
+            # Add bill status column
+            display_df['has_bill'] = filtered_df['bill_filename'].notna().apply(lambda x: '✅' if x else '❌')
+            
+            # Add assigned_to column if it exists
+            if 'stage1_assigned_to' in filtered_df.columns:
+                display_df.insert(6, 'assigned_to', filtered_df['stage1_assigned_to'])
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            excel_data = to_excel(filtered_df)
+            st.download_button(
+                label="📥 Download Excel",
+                data=excel_data,
+                file_name=f"expenses_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.info("📌 No expenses match the selected filters.")
     else:
         st.info("📌 No expenses recorded yet.")
 
