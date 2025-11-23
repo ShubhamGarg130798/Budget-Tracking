@@ -616,8 +616,8 @@ if page_clean == "Add Expense":
                     bill_filetype = uploaded_file.type
                 
                 add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype)
-                st.success(f"🎉 Expense submitted successfully and assigned to {assigned_to}!")
-                st.balloons()
+                st.toast("✅ Expense has been added successfully!", icon="✅")
+                st.rerun()
             else:
                 st.error("⚠️ Please fill all required fields!")
 
@@ -689,7 +689,7 @@ elif page_clean == "My Expenses":
                     if st.button(f"💾 Save Bill", key=f"my_save_bill_{row['id']}", type="primary"):
                         bill_data = uploaded_bill.read()
                         update_expense_bill(row['id'], bill_data, uploaded_bill.name, uploaded_bill.type)
-                        st.success(f"✅ Bill uploaded successfully!")
+                        st.toast("✅ Bill has been uploaded successfully!", icon="✅")
                         st.rerun()
                 
                 st.markdown("---")
@@ -838,14 +838,14 @@ elif "Approval Stage 1" in page_clean:
                     with col1:
                         if st.button("✅ Approve", key=f"approve_s1_{row['id']}", type="primary", use_container_width=True):
                             approve_expense_stage1(row['id'], st.session_state.full_name, 'Approved', remarks)
-                            st.success("✅ Approved!")
+                            st.toast("✅ Expense has been approved successfully!", icon="✅")
                             st.rerun()
                     
                     with col2:
                         if st.button("❌ Reject", key=f"reject_s1_{row['id']}", use_container_width=True):
                             if remarks:
                                 approve_expense_stage1(row['id'], st.session_state.full_name, 'Rejected', remarks)
-                                st.error("❌ Rejected!")
+                                st.toast("❌ Expense has been rejected successfully!", icon="❌")
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Please provide remarks for rejection")
@@ -964,14 +964,14 @@ elif "Approval Stage 2" in page_clean:
                     with col1:
                         if st.button("✅ Approve", key=f"approve_s2_{row['id']}", type="primary", use_container_width=True):
                             approve_expense_stage2(row['id'], st.session_state.full_name, 'Approved', remarks)
-                            st.success("✅ Approved!")
+                            st.toast("✅ Expense has been approved successfully!", icon="✅")
                             st.rerun()
                     
                     with col2:
                         if st.button("❌ Reject", key=f"reject_s2_{row['id']}", use_container_width=True):
                             if remarks:
                                 approve_expense_stage2(row['id'], st.session_state.full_name, 'Rejected', remarks)
-                                st.error("❌ Rejected!")
+                                st.toast("❌ Expense has been rejected successfully!", icon="❌")
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Please provide remarks for rejection")
@@ -1100,7 +1100,7 @@ elif "Approval Stage 3" in page_clean:
                             if transaction_ref:
                                 approve_expense_stage3(row['id'], st.session_state.full_name, 'Paid', 
                                                      payment_mode, transaction_ref, remarks)
-                                st.success("✅ Payment processed!")
+                                st.toast("✅ Expense has been paid successfully!", icon="✅")
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Please provide transaction reference")
@@ -1110,7 +1110,7 @@ elif "Approval Stage 3" in page_clean:
                             if remarks:
                                 approve_expense_stage3(row['id'], st.session_state.full_name, 'Rejected', 
                                                      None, None, remarks)
-                                st.error("❌ Payment rejected!")
+                                st.toast("❌ Payment has been rejected successfully!", icon="❌")
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Please provide remarks for rejection")
@@ -1284,7 +1284,7 @@ elif page_clean == "View All Expenses":
                     if st.button(f"💾 Save Bill", key=f"save_bill_{row['id']}", type="primary"):
                         bill_data = uploaded_bill.read()
                         update_expense_bill(row['id'], bill_data, uploaded_bill.name, uploaded_bill.type)
-                        st.success(f"✅ Bill uploaded successfully for Expense ID {row['id']}!")
+                        st.toast("✅ Bill has been uploaded successfully!", icon="✅")
                         st.rerun()
                 
                 st.markdown("---")
@@ -1391,8 +1391,7 @@ elif page_clean == "User Management":
                             st.session_state.username
                         )
                         if success:
-                            st.success(f"✅ {message}")
-                            st.balloons()
+                            st.toast(f"✅ {message}", icon="✅")
                         else:
                             st.error(f"❌ {message}")
                 else:
@@ -1518,15 +1517,6 @@ elif page_clean == "Change Password":
                 else:
                     success, message = change_password(st.session_state.username, current_password, new_password)
                     if success:
-                        st.success(f"✅ {message}")
-                        st.balloons()
+                        st.toast(f"✅ {message}", icon="✅")
                     else:
                         st.error(f"❌ {message}")
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: gray;'>
-💡 Multi-Stage Approval System: HR Entry → Stage 1 (Brand Head) → Stage 2 (Senior Manager) → Stage 3 (Accounts Payment) | 🔐 Role-based access control enabled
-</div>
-""", unsafe_allow_html=True)
