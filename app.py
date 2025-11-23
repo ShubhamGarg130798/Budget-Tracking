@@ -114,6 +114,9 @@ def init_db():
             subcategory TEXT,
             amount REAL NOT NULL,
             description TEXT,
+            bill_document BLOB,
+            bill_filename TEXT,
+            bill_filetype TEXT,
             added_by TEXT,
             stage1_assigned_to TEXT,
             stage1_status TEXT DEFAULT 'Pending',
@@ -148,6 +151,15 @@ def init_db():
     if 'subcategory' not in columns:
         try:
             c.execute("ALTER TABLE expenses ADD COLUMN subcategory TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    
+    if 'bill_document' not in columns:
+        try:
+            c.execute("ALTER TABLE expenses ADD COLUMN bill_document BLOB")
+            c.execute("ALTER TABLE expenses ADD COLUMN bill_filename TEXT")
+            c.execute("ALTER TABLE expenses ADD COLUMN bill_filetype TEXT")
             conn.commit()
         except sqlite3.OperationalError:
             pass
@@ -234,13 +246,13 @@ def reset_user_password(user_id, new_password):
     conn.close()
 
 # Expense Functions
-def add_expense(date, brand, category, subcategory, amount, description, added_by, assigned_to=None):
+def add_expense(date, brand, category, subcategory, amount, description, added_by, assigned_to=None, bill_document=None, bill_filename=None, bill_filetype=None):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     c.execute('''
-        INSERT INTO expenses (date, brand, category, subcategory, amount, description, added_by, stage1_assigned_to)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (date, brand, category, subcategory, amount, description, added_by, assigned_to))
+        INSERT INTO expenses (date, brand, category, subcategory, amount, description, added_by, stage1_assigned_to, bill_document, bill_filename, bill_filetype)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype))
     conn.commit()
     conn.close()
 
@@ -257,6 +269,18 @@ def get_brand_heads():
     result = c.fetchall()
     conn.close()
     return result
+
+def update_expense_bill(expense_id, bill_document, bill_filename, bill_filetype):
+    """Update expense with bill document"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute('''
+        UPDATE expenses 
+        SET bill_document = ?, bill_filename = ?, bill_filetype = ?
+        WHERE id = ?
+    ''', (bill_document, bill_filename, bill_filetype, expense_id))
+    conn.commit()
+    conn.close()
 
 def change_password(username, old_password, new_password):
     """Change user's own password"""
@@ -574,11 +598,24 @@ if page_clean == "Add Expense":
         
         description = st.text_area("📝 Description", placeholder="Enter expense details...")
         
+        # File upload for bill/document
+        uploaded_file = st.file_uploader("📎 Upload Bill/Document (PDF or Image)", type=['pdf', 'png', 'jpg', 'jpeg'], help="Upload bill, invoice or supporting document")
+        
         submitted = st.form_submit_button("✅ Add Expense", use_container_width=True, type="primary")
         
         if submitted:
             if amount > 0 and added_by and assigned_to:
-                add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to)
+                # Process uploaded file
+                bill_document = None
+                bill_filename = None
+                bill_filetype = None
+                
+                if uploaded_file is not None:
+                    bill_document = uploaded_file.read()
+                    bill_filename = uploaded_file.name
+                    bill_filetype = uploaded_file.type
+                
+                add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype)
                 st.success(f"🎉 Expense submitted successfully and assigned to {assigned_to}!")
                 st.balloons()
             else:
@@ -618,6 +655,42 @@ elif page_clean == "My Expenses":
                 st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
                 if pd.notna(row.get('stage1_assigned_to')):
                     st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
+                
+                st.markdown("---")
+                
+                # Bill/Document Section
+                st.markdown("### 📎 Bill/Document")
+                has_bill = pd.notna(row.get('bill_filename'))
+                
+                if has_bill:
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        st.success(f"✅ Document uploaded: **{row['bill_filename']}**")
+                    with col2:
+                        if st.download_button(
+                            label="📥 Download",
+                            data=row['bill_document'],
+                            file_name=row['bill_filename'],
+                            mime=row['bill_filetype'],
+                            key=f"my_download_bill_{row['id']}"
+                        ):
+                            st.success("Downloaded!")
+                else:
+                    st.info("ℹ️ No bill/document uploaded yet")
+                
+                # Allow uploading/updating bill
+                uploaded_bill = st.file_uploader(
+                    "Upload/Update Bill", 
+                    type=['pdf', 'png', 'jpg', 'jpeg'],
+                    key=f"my_upload_bill_{row['id']}"
+                )
+                
+                if uploaded_bill is not None:
+                    if st.button(f"💾 Save Bill", key=f"my_save_bill_{row['id']}", type="primary"):
+                        bill_data = uploaded_bill.read()
+                        update_expense_bill(row['id'], bill_data, uploaded_bill.name, uploaded_bill.type)
+                        st.success(f"✅ Bill uploaded successfully!")
+                        st.rerun()
                 
                 st.markdown("---")
                 
@@ -740,6 +813,24 @@ elif "Approval Stage 1" in page_clean:
                         st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
                     st.markdown(f"**📅 Submitted On:** {row['created_at']}")
                     
+                    # Show bill if available
+                    if pd.notna(row.get('bill_filename')):
+                        st.markdown("---")
+                        st.markdown("### 📎 Attached Bill/Document")
+                        col1, col2 = st.columns([2, 1])
+                        with col1:
+                            st.success(f"✅ **{row['bill_filename']}**")
+                        with col2:
+                            st.download_button(
+                                label="📥 View Bill",
+                                data=row['bill_document'],
+                                file_name=row['bill_filename'],
+                                mime=row['bill_filetype'],
+                                key=f"s1_view_bill_{row['id']}"
+                            )
+                    else:
+                        st.info("ℹ️ No bill attached")
+                    
                     st.markdown("---")
                     remarks = st.text_area("💬 Remarks", key=f"remarks_s1_{row['id']}")
                     
@@ -840,6 +931,24 @@ elif "Approval Stage 2" in page_clean:
                     st.markdown(f"**📝 Description:** {row['description']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
+                    
+                    # Show bill if available
+                    if pd.notna(row.get('bill_filename')):
+                        st.markdown("---")
+                        st.markdown("### 📎 Attached Bill/Document")
+                        col1, col2 = st.columns([2, 1])
+                        with col1:
+                            st.success(f"✅ **{row['bill_filename']}**")
+                        with col2:
+                            st.download_button(
+                                label="📥 View Bill",
+                                data=row['bill_document'],
+                                file_name=row['bill_filename'],
+                                mime=row['bill_filetype'],
+                                key=f"s2_view_bill_{row['id']}"
+                            )
+                    else:
+                        st.info("ℹ️ No bill attached")
                     
                     st.markdown("---")
                     st.markdown("**Stage 1 Approval:**")
@@ -952,6 +1061,24 @@ elif "Approval Stage 3" in page_clean:
                     st.markdown(f"**📝 Description:** {row['description']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
+                    
+                    # Show bill if available
+                    if pd.notna(row.get('bill_filename')):
+                        st.markdown("---")
+                        st.markdown("### 📎 Attached Bill/Document")
+                        col1, col2 = st.columns([2, 1])
+                        with col1:
+                            st.success(f"✅ **{row['bill_filename']}**")
+                        with col2:
+                            st.download_button(
+                                label="📥 View Bill",
+                                data=row['bill_document'],
+                                file_name=row['bill_filename'],
+                                mime=row['bill_filetype'],
+                                key=f"s3_view_bill_{row['id']}"
+                            )
+                    else:
+                        st.info("ℹ️ No bill attached")
                     
                     st.markdown("---")
                     st.markdown("**✅ Approval Status:**")
@@ -1094,17 +1221,123 @@ elif page_clean == "View All Expenses":
         df['Overall_Status'] = df.apply(get_overall_status, axis=1)
         df['Category_Display'] = df.apply(get_category_display, axis=1)
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("💵 Total", f"₹{df['amount'].sum():,.2f}")
         col2.metric("📝 Count", len(df))
         col3.metric("✅ Paid", len(df[df['stage3_status'] == 'Paid']))
+        col4.metric("📎 With Bills", len(df[df['bill_filename'].notna()]))
         
         st.markdown("---")
+        
+        # Expandable view for each expense
+        st.subheader("📋 Detailed Expense Records")
+        
+        for idx, row in df.iterrows():
+            has_bill = pd.notna(row.get('bill_filename'))
+            bill_icon = "📎" if has_bill else "📄"
+            
+            with st.expander(f"{bill_icon} ID: {row['id']} | {row['brand']} | {row['Category_Display']} | ₹{row['amount']:,.2f} | {row['Overall_Status']}"):
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                col2.metric("🏢 Brand", row['brand'])
+                col3.metric("📂 Category", row['Category_Display'])
+                col4.metric("📊 Status", row['Overall_Status'])
+                
+                st.markdown(f"**📝 Description:** {row['description']}")
+                st.markdown(f"**👤 Submitted By:** {row['added_by']}")
+                st.markdown(f"**📅 Expense Date:** {row['date']}")
+                st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
+                
+                if pd.notna(row.get('stage1_assigned_to')):
+                    st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
+                
+                st.markdown("---")
+                
+                # Bill/Document Section
+                st.markdown("### 📎 Bill/Document")
+                
+                if has_bill:
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        st.success(f"✅ Document uploaded: **{row['bill_filename']}**")
+                    with col2:
+                        if st.download_button(
+                            label="📥 Download Bill",
+                            data=row['bill_document'],
+                            file_name=row['bill_filename'],
+                            mime=row['bill_filetype'],
+                            key=f"download_bill_{row['id']}"
+                        ):
+                            st.success("Downloaded!")
+                else:
+                    st.info("ℹ️ No bill/document uploaded yet")
+                
+                # Allow uploading bill if not present or updating
+                st.markdown("**Upload/Update Bill:**")
+                uploaded_bill = st.file_uploader(
+                    "Upload Bill/Document (PDF or Image)", 
+                    type=['pdf', 'png', 'jpg', 'jpeg'],
+                    key=f"upload_bill_{row['id']}"
+                )
+                
+                if uploaded_bill is not None:
+                    if st.button(f"💾 Save Bill", key=f"save_bill_{row['id']}", type="primary"):
+                        bill_data = uploaded_bill.read()
+                        update_expense_bill(row['id'], bill_data, uploaded_bill.name, uploaded_bill.type)
+                        st.success(f"✅ Bill uploaded successfully for Expense ID {row['id']}!")
+                        st.rerun()
+                
+                st.markdown("---")
+                
+                # Approval Status
+                st.markdown("### 📋 Approval Status")
+                status_col1, status_col2, status_col3 = st.columns(3)
+                
+                with status_col1:
+                    st.markdown("**Stage 1: Brand Head**")
+                    if row['stage1_status'] == 'Approved':
+                        st.success("✅ Approved")
+                        st.caption(f"By: {row['stage1_approved_by']}")
+                    elif row['stage1_status'] == 'Rejected':
+                        st.error("❌ Rejected")
+                        st.caption(f"By: {row['stage1_approved_by']}")
+                    else:
+                        st.warning("⏳ Pending")
+                
+                with status_col2:
+                    st.markdown("**Stage 2: Senior Manager**")
+                    if row['stage2_status'] == 'Approved':
+                        st.success("✅ Approved")
+                        st.caption(f"By: {row['stage2_approved_by']}")
+                    elif row['stage2_status'] == 'Rejected':
+                        st.error("❌ Rejected")
+                        st.caption(f"By: {row['stage2_approved_by']}")
+                    else:
+                        st.warning("⏳ Pending")
+                
+                with status_col3:
+                    st.markdown("**Stage 3: Accounts**")
+                    if row['stage3_status'] == 'Paid':
+                        st.success("✅ Paid")
+                        st.caption(f"By: {row['stage3_paid_by']}")
+                        if pd.notna(row.get('stage3_payment_mode')):
+                            st.caption(f"Mode: {row['stage3_payment_mode']}")
+                    elif row['stage3_status'] == 'Rejected':
+                        st.error("❌ Rejected")
+                        st.caption(f"By: {row['stage3_paid_by']}")
+                    else:
+                        st.warning("⏳ Pending")
+        
+        st.markdown("---")
+        st.subheader("📊 Summary Table")
         
         display_df = df[[
             'id', 'date', 'brand', 'Category_Display', 'amount', 'description',
             'stage1_status', 'stage2_status', 'stage3_status', 'Overall_Status'
         ]].copy()
+        
+        # Add bill status column
+        display_df['has_bill'] = df['bill_filename'].notna().apply(lambda x: '✅' if x else '❌')
         
         # Add assigned_to column if it exists
         if 'stage1_assigned_to' in df.columns:
