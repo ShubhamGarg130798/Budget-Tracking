@@ -1200,7 +1200,7 @@ elif page_clean == "Dashboard":
         
         with col2:
             # Status filter
-            status_options = ["All", "Pending", "Paid", "Rejected"]
+            status_options = ["All", "Stage 1 Pending", "Stage 2 Pending", "Payment Pending", "Paid", "Rejected"]
             selected_status = st.selectbox("📊 Status", status_options, key="dash_status_filter")
         
         with col3:
@@ -1238,8 +1238,19 @@ elif page_clean == "Dashboard":
             filtered_df = filtered_df[filtered_df['brand'] == selected_brand]
         
         if selected_status != "All":
-            if selected_status == "Pending":
-                filtered_df = filtered_df[filtered_df['stage3_status'] == 'Pending']
+            if selected_status == "Stage 1 Pending":
+                filtered_df = filtered_df[filtered_df['stage1_status'] == 'Pending']
+            elif selected_status == "Stage 2 Pending":
+                filtered_df = filtered_df[
+                    (filtered_df['stage1_status'] == 'Approved') & 
+                    (filtered_df['stage2_status'] == 'Pending')
+                ]
+            elif selected_status == "Payment Pending":
+                filtered_df = filtered_df[
+                    (filtered_df['stage1_status'] == 'Approved') & 
+                    (filtered_df['stage2_status'] == 'Approved') & 
+                    (filtered_df['stage3_status'] == 'Pending')
+                ]
             elif selected_status == "Paid":
                 filtered_df = filtered_df[filtered_df['stage3_status'] == 'Paid']
             elif selected_status == "Rejected":
@@ -1320,7 +1331,7 @@ elif page_clean == "View All Expenses":
         
         with col2:
             # Status filter
-            status_options = ["All", "Pending", "Paid", "Rejected"]
+            status_options = ["All", "Stage 1 Pending", "Stage 2 Pending", "Payment Pending", "Paid", "Rejected"]
             selected_status = st.selectbox("📊 Status", status_options, key="view_status_filter")
         
         with col3:
@@ -1358,8 +1369,19 @@ elif page_clean == "View All Expenses":
             filtered_df = filtered_df[filtered_df['brand'] == selected_brand]
         
         if selected_status != "All":
-            if selected_status == "Pending":
-                filtered_df = filtered_df[filtered_df['stage3_status'] == 'Pending']
+            if selected_status == "Stage 1 Pending":
+                filtered_df = filtered_df[filtered_df['stage1_status'] == 'Pending']
+            elif selected_status == "Stage 2 Pending":
+                filtered_df = filtered_df[
+                    (filtered_df['stage1_status'] == 'Approved') & 
+                    (filtered_df['stage2_status'] == 'Pending')
+                ]
+            elif selected_status == "Payment Pending":
+                filtered_df = filtered_df[
+                    (filtered_df['stage1_status'] == 'Approved') & 
+                    (filtered_df['stage2_status'] == 'Approved') & 
+                    (filtered_df['stage3_status'] == 'Pending')
+                ]
             elif selected_status == "Paid":
                 filtered_df = filtered_df[filtered_df['stage3_status'] == 'Paid']
             elif selected_status == "Rejected":
