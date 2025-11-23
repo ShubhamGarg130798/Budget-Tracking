@@ -70,7 +70,8 @@ CATEGORIES = {
     "Salaries": [],
     "Incentives": [],
     "Celebrations/Events": [],
-    "Maintenance": []
+    "Maintenance": [],
+    "Others": []
 }
 
 PAYMENT_MODES = ["Cash", "Bank Transfer", "Cheque", "UPI", "Card", "Other"]
@@ -542,13 +543,6 @@ if page_clean == "Add Expense":
             
             # Category selection
             category = st.selectbox("📂 Category *", options=list(CATEGORIES.keys()))
-            
-            # Subcategory selection (conditional based on category)
-            subcategory = None
-            if CATEGORIES[category]:  # If subcategories exist
-                subcategory = st.selectbox("📑 Subcategory *", options=CATEGORIES[category])
-            else:
-                st.info("ℹ️ No subcategories for this category")
         
         with col2:
             amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
@@ -562,6 +556,13 @@ if page_clean == "Add Expense":
             else:
                 st.warning("⚠️ No Brand Heads available. Please contact admin.")
                 assigned_to = None
+        
+        # Subcategory selection (conditional based on category) - placed after both columns
+        subcategory = None
+        if CATEGORIES[category]:  # If subcategories exist for selected category
+            subcategory = st.selectbox("📑 Subcategory *", options=CATEGORIES[category])
+        else:
+            st.info(f"ℹ️ No subcategories available for {category}")
         
         description = st.text_area("📝 Description", placeholder="Enter expense details...")
         
