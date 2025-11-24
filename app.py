@@ -217,7 +217,7 @@ def verify_session_token(token):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     
-    # Use SQLite's datetime comparison directly
+    # SQLite's datetime comparison 
     c.execute('''
         SELECT st.username, u.full_name, u.role
         FROM session_tokens st
@@ -269,7 +269,7 @@ def cleanup_expired_tokens():
     conn.commit()
     conn.close()
 
-# Simple token retrieval function
+# token retrieval function
 def get_saved_token():
     """Get token from session state or URL parameter"""
     # First check session state
@@ -1882,7 +1882,7 @@ elif page_clean == "User Management":
         else:
             st.info("No users found.")
 
-# Page 9: Change Password
+# Page 9: Change Passwod
 elif page_clean == "Change Password":
     st.header("🔐 Change Password")
     
