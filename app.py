@@ -1,12 +1,13 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import io
 import plotly.express as px
 import plotly.graph_objects as go
 import hashlib
 import time
+import secrets
 
 # Page configuration
 st.set_page_config(
@@ -96,6 +97,19 @@ def init_db():
         )
     ''')
     
+    # Session tokens table for persistent login
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS session_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            is_valid INTEGER DEFAULT 1,
+            FOREIGN KEY (username) REFERENCES users(username)
+        )
+    ''')
+    
     # default admin user
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
@@ -138,7 +152,7 @@ def init_db():
         )
     ''')
     
-    # 
+    # Check and add missing columns
     c.execute("PRAGMA table_info(expenses)")
     columns = [col[1] for col in c.fetchall()]
     
@@ -168,8 +182,115 @@ def init_db():
     conn.commit()
     conn.close()
 
-# database
+# Initialize database
 init_db()
+
+# Session Token Management Functions
+def create_session_token(username, remember_me=False):
+    """Create a new session token for the user"""
+    token = secrets.token_urlsafe(32)
+    
+    # Token expires in 30 days if remember_me, otherwise 1 day
+    expiry_days = 30 if remember_me else 1
+    expires_at = datetime.now() + timedelta(days=expiry_days)
+    
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    
+    # Invalidate old tokens for this user
+    c.execute("UPDATE session_tokens SET is_valid = 0 WHERE username = ?", (username,))
+    
+    # Create new token
+    c.execute('''
+        INSERT INTO session_tokens (username, token, expires_at)
+        VALUES (?, ?, ?)
+    ''', (username, token, expires_at))
+    
+    conn.commit()
+    conn.close()
+    
+    return token
+
+def verify_session_token(token):
+    """Verify if a session token is valid and return user data"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    
+    c.execute('''
+        SELECT st.username, u.full_name, u.role, st.expires_at
+        FROM session_tokens st
+        JOIN users u ON st.username = u.username
+        WHERE st.token = ? AND st.is_valid = 1 AND u.is_active = 1
+    ''', (token,))
+    
+    result = c.fetchone()
+    conn.close()
+    
+    if result:
+        username, full_name, role, expires_at = result
+        # Check if token has expired
+        if datetime.now() < datetime.strptime(expires_at, '%Y-%m-%d %H:%M:%S'):
+            return {
+                'username': username,
+                'full_name': full_name,
+                'role': role
+            }
+        else:
+            # Token expired, invalidate it
+            invalidate_session_token(token)
+    
+    return None
+
+def invalidate_session_token(token):
+    """Invalidate a session token"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute("UPDATE session_tokens SET is_valid = 0 WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()
+
+def invalidate_all_user_tokens(username):
+    """Invalidate all session tokens for a user"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute("UPDATE session_tokens SET is_valid = 0 WHERE username = ?", (username,))
+    conn.commit()
+    conn.close()
+
+def cleanup_expired_tokens():
+    """Clean up expired tokens from database"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    c.execute('''
+        UPDATE session_tokens 
+        SET is_valid = 0 
+        WHERE expires_at < datetime('now') AND is_valid = 1
+    ''')
+    conn.commit()
+    conn.close()
+
+# Cookie Management Functions
+def get_cookie(key):
+    """Get cookie value from query params (simulated cookie storage)"""
+    try:
+        return st.query_params.get(key)
+    except:
+        return None
+
+def set_cookie(key, value):
+    """Set cookie value in query params (simulated cookie storage)"""
+    try:
+        st.query_params[key] = value
+    except:
+        pass
+
+def delete_cookie(key):
+    """Delete cookie from query params"""
+    try:
+        if key in st.query_params:
+            del st.query_params[key]
+    except:
+        pass
 
 # User Management Functions
 def authenticate_user(username, password):
@@ -225,6 +346,15 @@ def update_user_status(user_id, is_active):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     c.execute("UPDATE users SET is_active = ? WHERE id = ?", (is_active, user_id))
+    
+    # If deactivating, also invalidate their tokens
+    if not is_active:
+        c.execute("""
+            UPDATE session_tokens 
+            SET is_valid = 0 
+            WHERE username = (SELECT username FROM users WHERE id = ?)
+        """, (user_id,))
+    
     conn.commit()
     conn.close()
 
@@ -232,7 +362,18 @@ def delete_user(user_id):
     """Delete user"""
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
-    c.execute("DELETE FROM users WHERE id = ? AND username != 'admin'", (user_id,))
+    
+    # Get username first
+    c.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+    result = c.fetchone()
+    
+    if result:
+        username = result[0]
+        # Invalidate all tokens
+        c.execute("UPDATE session_tokens SET is_valid = 0 WHERE username = ?", (username,))
+        # Delete user
+        c.execute("DELETE FROM users WHERE id = ? AND username != 'admin'", (user_id,))
+    
     conn.commit()
     conn.close()
 
@@ -242,7 +383,18 @@ def reset_user_password(user_id, new_password):
     
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
-    c.execute("UPDATE users SET password = ? WHERE id = ?", (hashed_password, user_id))
+    
+    # Get username
+    c.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+    result = c.fetchone()
+    
+    if result:
+        username = result[0]
+        # Update password
+        c.execute("UPDATE users SET password = ? WHERE id = ?", (hashed_password, user_id))
+        # Invalidate all existing tokens
+        c.execute("UPDATE session_tokens SET is_valid = 0 WHERE username = ?", (username,))
+    
     conn.commit()
     conn.close()
 
@@ -292,7 +444,7 @@ def change_password(username, old_password, new_password):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     
-    # old password 
+    # Check old password 
     c.execute("SELECT id FROM users WHERE username = ? AND password = ?", (username, old_hashed))
     if not c.fetchone():
         conn.close()
@@ -300,6 +452,10 @@ def change_password(username, old_password, new_password):
     
     # Update password
     c.execute("UPDATE users SET password = ? WHERE username = ?", (new_hashed, username))
+    
+    # Invalidate all existing tokens for this user
+    c.execute("UPDATE session_tokens SET is_valid = 0 WHERE username = ?", (username,))
+    
     conn.commit()
     conn.close()
     return True, "Password changed successfully"
@@ -477,12 +633,30 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Data')
     return output.getvalue()
 
-# Initialize session 
+# Clean up expired tokens on startup
+cleanup_expired_tokens()
+
+# Initialize session state
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.full_name = None
     st.session_state.user_role = None
+    st.session_state.session_token = None
+
+# Check for existing valid session token
+if not st.session_state.logged_in:
+    saved_token = get_cookie('session_token')
+    if saved_token:
+        user_data = verify_session_token(saved_token)
+        if user_data:
+            # Valid token found, restore session
+            st.session_state.logged_in = True
+            st.session_state.username = user_data['username']
+            st.session_state.full_name = user_data['full_name']
+            st.session_state.user_role = user_data['role']
+            st.session_state.session_token = saved_token
+            st.rerun()
 
 # Login Page
 if not st.session_state.logged_in:
@@ -496,25 +670,39 @@ if not st.session_state.logged_in:
         
         username = st.text_input("Username", placeholder="Enter your username")
         password = st.text_input("Password", type="password", placeholder="Enter your password")
+        remember_me = st.checkbox("🔒 Remember me for 30 days", value=False)
         
         if st.button("🚀 Login", use_container_width=True, type="primary"):
             if username and password:
                 user_data = authenticate_user(username, password)
                 if user_data:
+                    # Create session token
+                    token = create_session_token(user_data[0], remember_me)
+                    
+                    # Set session state
                     st.session_state.logged_in = True
                     st.session_state.username = user_data[0]
                     st.session_state.full_name = user_data[1]
                     st.session_state.user_role = user_data[2]
+                    st.session_state.session_token = token
+                    
+                    # Save token to cookie
+                    set_cookie('session_token', token)
+                    
                     st.success(f"✅ Welcome {user_data[1]}!")
+                    time.sleep(0.5)
                     st.rerun()
                 else:
                     st.error("❌ Invalid username or password!")
             else:
                 st.warning("⚠️ Please enter both username and password")
+        
+        st.markdown("---")
+        st.info("💡 **Tip:** Check 'Remember me' to stay logged in for 30 days, even after closing your browser!")
     
     st.stop()
 
-#  (After Login)
+# Main App (After Login)
 st.title("💰 Brand Expense Tracker")
 
 col1, col2 = st.columns([3, 1])
@@ -522,10 +710,20 @@ with col1:
     st.markdown(f"**Logged in as:** {st.session_state.full_name} ({USER_ROLES[st.session_state.user_role]['title']})")
 with col2:
     if st.button("🚪 Logout"):
+        # Invalidate session token
+        if st.session_state.session_token:
+            invalidate_session_token(st.session_state.session_token)
+        
+        # Clear cookie
+        delete_cookie('session_token')
+        
+        # Clear session state
         st.session_state.logged_in = False
         st.session_state.username = None
         st.session_state.full_name = None
         st.session_state.user_role = None
+        st.session_state.session_token = None
+        
         st.rerun()
 
 st.markdown("---")
@@ -552,7 +750,7 @@ if st.session_state.user_role == "admin":
 
 page = st.sidebar.selectbox("📌 Navigation", page_options)
 
-# 
+# Clean page name
 page_clean = page.split(" ", 1)[1] if " " in page else page
 
 # Page 1: Add Expense
@@ -1651,7 +1849,7 @@ elif page_clean == "User Management":
                                 if st.form_submit_button("✅ Reset", use_container_width=True):
                                     if len(new_pwd) >= 6:
                                         reset_user_password(user['id'], new_pwd)
-                                        st.success("Password reset successfully!")
+                                        st.success("Password reset successfully! All user sessions invalidated.")
                                         st.session_state[f'show_reset_{user["id"]}'] = False
                                         st.rerun()
                                     else:
@@ -1705,6 +1903,21 @@ elif page_clean == "Change Password":
                 else:
                     success, message = change_password(st.session_state.username, current_password, new_password)
                     if success:
-                        st.toast(f"✅ {message}", icon="✅")
+                        st.success(f"✅ {message}")
+                        st.info("⚠️ All your sessions have been invalidated. Please login again.")
+                        time.sleep(2)
+                        
+                        # Logout user after password change
+                        if st.session_state.session_token:
+                            invalidate_session_token(st.session_state.session_token)
+                        delete_cookie('session_token')
+                        
+                        st.session_state.logged_in = False
+                        st.session_state.username = None
+                        st.session_state.full_name = None
+                        st.session_state.user_role = None
+                        st.session_state.session_token = None
+                        
+                        st.rerun()
                     else:
                         st.error(f"❌ {message}")
