@@ -217,28 +217,27 @@ def verify_session_token(token):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     
+    # Use SQLite's datetime comparison directly
     c.execute('''
-        SELECT st.username, u.full_name, u.role, st.expires_at
+        SELECT st.username, u.full_name, u.role
         FROM session_tokens st
         JOIN users u ON st.username = u.username
-        WHERE st.token = ? AND st.is_valid = 1 AND u.is_active = 1
+        WHERE st.token = ? 
+        AND st.is_valid = 1 
+        AND u.is_active = 1
+        AND datetime(st.expires_at) > datetime('now')
     ''', (token,))
     
     result = c.fetchone()
     conn.close()
     
     if result:
-        username, full_name, role, expires_at = result
-        # Check if token has expired
-        if datetime.now() < datetime.strptime(expires_at, '%Y-%m-%d %H:%M:%S'):
-            return {
-                'username': username,
-                'full_name': full_name,
-                'role': role
-            }
-        else:
-            # Token expired, invalidate it
-            invalidate_session_token(token)
+        username, full_name, role = result
+        return {
+            'username': username,
+            'full_name': full_name,
+            'role': role
+        }
     
     return None
 
@@ -705,9 +704,6 @@ if not st.session_state.logged_in:
                     st.error("❌ Invalid username or password!")
             else:
                 st.warning("⚠️ Please enter both username and password")
-        
-        st.markdown("---")
-        st.info("💡 **Tip:** Check 'Remember me' to stay logged in for 30 days, even after closing your browser!")
     
     st.stop()
 
