@@ -54,7 +54,7 @@ USER_ROLES = {
 
 # Brand list
 BRANDS = [
-    "FundoBaBa", "Salary Adda", "FastPaise", "SnapPaisa", "Salary 4 Sure",
+    "Central", "FundoBaBa", "Salary Adda", "FastPaise", "SnapPaisa", "Salary 4 Sure",
     "Duniya Finance", "Tejas", "BlinkR", "Salary Setu", "Qua Loans",
     "Paisa Pop", "Salary 4 You", "Rupee Hype", "Minutes Loan", "Squid Loan",
     "Zepto", "Paisa on Salary", "Jhatpat"
