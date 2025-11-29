@@ -183,8 +183,28 @@ def init_db():
     conn.commit()
     conn.close()
 
+def add_vendor_column():
+    """Add vendor column to expenses table if it doesn't exist"""
+    conn = sqlite3.connect('expenses.db')
+    c = conn.cursor()
+    
+    # Check if vendor column exists
+    c.execute("PRAGMA table_info(expenses)")
+    columns = [col[1] for col in c.fetchall()]
+    
+    if 'vendor_name' not in columns:
+        try:
+            c.execute("ALTER TABLE expenses ADD COLUMN vendor_name TEXT")
+            conn.commit()
+            print("Vendor column added successfully")
+        except sqlite3.OperationalError:
+            pass
+    
+    conn.close()
+
 # Initialize database
 init_db()
+add_vendor_column()
 
 # Session Token Management Functions
 def create_session_token(username, remember_me=False):
@@ -408,13 +428,13 @@ def reset_user_password(user_id, new_password):
     conn.close()
 
 # Expense Functions
-def add_expense(date, brand, category, subcategory, amount, description, added_by, assigned_to=None, bill_document=None, bill_filename=None, bill_filetype=None):
+def add_expense(date, brand, category, subcategory, amount, description, added_by, assigned_to=None, bill_document=None, bill_filename=None, bill_filetype=None, vendor_name=None):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     c.execute('''
-        INSERT INTO expenses (date, brand, category, subcategory, amount, description, added_by, stage1_assigned_to, bill_document, bill_filename, bill_filetype)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype))
+        INSERT INTO expenses (date, brand, category, subcategory, amount, description, added_by, stage1_assigned_to, bill_document, bill_filename, bill_filetype, vendor_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype, vendor_name))
     conn.commit()
     conn.close()
 
@@ -793,8 +813,9 @@ if page_clean == "Add Expense":
             brand = st.selectbox("🏢 Brand", BRANDS)
             amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
         
-        with col2:
+       with col2:
             added_by = st.text_input("👤 Added By", value=st.session_state.full_name)
+            vendor_name = st.text_input("🏪 Vendor Name", placeholder="Enter vendor/supplier name")
             
             # Get brand heads for assignment
             brand_heads = get_brand_heads()
@@ -824,7 +845,7 @@ if page_clean == "Add Expense":
                     bill_filename = uploaded_file.name
                     bill_filetype = uploaded_file.type
                 
-                add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype)
+                add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype, vendor_name)
                 st.toast("✅ Expense has been added successfully!", icon="✅")
                 time.sleep(1)
                 st.rerun()
@@ -856,11 +877,13 @@ elif page_clean == "My Expenses":
             with st.expander(f"ID: {row['id']} | {row['brand']} | {row['Category_Display']} | ₹{row['amount']:,.2f} | {status_display}"):
                 # Basic Details
                 col1, col2, col3 = st.columns(3)
-                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+               col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                 col2.metric("🏢 Brand", row['brand'])
                 col3.metric("📂 Category", row['Category_Display'])
                 
                 st.markdown(f"**📝 Description:** {row['description']}")
+                if pd.notna(row.get('vendor_name')) and row['vendor_name']:
+                    st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
                 st.markdown(f"**📅 Expense Date:** {row['date']}")
                 st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
                 if pd.notna(row.get('stage1_assigned_to')):
