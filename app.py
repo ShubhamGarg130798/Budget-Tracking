@@ -749,7 +749,11 @@ else:
     if st.session_state.user_role in ["accounts_team", "admin"]:
         page_options.append("💳 Approval Stage 3 (Accounts Payment)")
     
-    page_options.extend(["📊 Dashboard", "📋 View All Expenses", "🔐 Change Password"])
+    # Dashboard only for stage2_approver, accounts_team, and admin
+    if st.session_state.user_role in ["stage2_approver", "accounts_team", "admin"]:
+        page_options.append("📊 Dashboard")
+    
+    page_options.extend(["📋 View All Expenses", "🔐 Change Password"])
 
 if st.session_state.user_role == "admin":
     page_options.append("👥 User Management")
