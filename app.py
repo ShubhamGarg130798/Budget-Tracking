@@ -1950,11 +1950,16 @@ elif page_clean == "User Management":
                             st.session_state[f'confirm_delete_{user["id"]}'] = False
                             st.rerun()
     else:
-        st.info("No users found.")
-        col1, col2, col3 = st.columns([1, 2, 1])
+            st.info("No users found.")
 
-with col2:
-    st.markdown(f"### Change password for: **{st.session_state.full_name}**")
+# Page 9: Change Password
+elif page_clean == "Change Password":
+    st.header("🔐 Change Password")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown(f"### Change password for: **{st.session_state.full_name}**")
     st.markdown("---")
     
     with st.form("change_password_form"):
