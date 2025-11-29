@@ -180,6 +180,13 @@ def init_db():
         except sqlite3.OperationalError:
             pass
     
+    if 'vendor_name' not in columns:
+        try:
+            c.execute("ALTER TABLE expenses ADD COLUMN vendor_name TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    
     conn.commit()
     conn.close()
 
@@ -813,7 +820,7 @@ if page_clean == "Add Expense":
             brand = st.selectbox("🏢 Brand", BRANDS)
             amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
         
-       with col2:
+        with col2:
             added_by = st.text_input("👤 Added By", value=st.session_state.full_name)
             vendor_name = st.text_input("🏪 Vendor Name", placeholder="Enter vendor/supplier name")
             
@@ -877,7 +884,7 @@ elif page_clean == "My Expenses":
             with st.expander(f"ID: {row['id']} | {row['brand']} | {row['Category_Display']} | ₹{row['amount']:,.2f} | {status_display}"):
                 # Basic Details
                 col1, col2, col3 = st.columns(3)
-               col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
+                col1.metric("💰 Amount", f"₹{row['amount']:,.2f}")
                 col2.metric("🏢 Brand", row['brand'])
                 col3.metric("📂 Category", row['Category_Display'])
                 
@@ -1042,6 +1049,8 @@ elif "Approval Stage 1" in page_clean:
                     col3.metric("📂 Category", row['Category_Display'])
                     
                     st.markdown(f"**📝 Description:** {row['description']}")
+                    if pd.notna(row.get('vendor_name')) and row['vendor_name']:
+                        st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     if pd.notna(row.get('stage1_assigned_to')):
                         st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
@@ -1122,6 +1131,8 @@ elif "Approval Stage 1" in page_clean:
                     col3.metric("📂 Category", row['Category_Display'])
                     
                     st.markdown(f"**📝 Description:** {row['description']}")
+                    if pd.notna(row.get('vendor_name')) and row['vendor_name']:
+                        st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1165,6 +1176,8 @@ elif "Approval Stage 2" in page_clean:
                     col3.metric("📂 Category", row['Category_Display'])
                     
                     st.markdown(f"**📝 Description:** {row['description']}")
+                    if pd.notna(row.get('vendor_name')) and row['vendor_name']:
+                        st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1250,6 +1263,8 @@ elif "Approval Stage 2" in page_clean:
                     col3.metric("📂 Category", row['Category_Display'])
                     
                     st.markdown(f"**📝 Description:** {row['description']}")
+                    if pd.notna(row.get('vendor_name')) and row['vendor_name']:
+                        st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1297,6 +1312,8 @@ elif "Approval Stage 3" in page_clean:
                     col3.metric("📂 Category", row['Category_Display'])
                     
                     st.markdown(f"**📝 Description:** {row['description']}")
+                    if pd.notna(row.get('vendor_name')) and row['vendor_name']:
+                        st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1389,6 +1406,8 @@ elif "Approval Stage 3" in page_clean:
                     col3.metric("📂 Category", row['Category_Display'])
                     
                     st.markdown(f"**📝 Description:** {row['description']}")
+                    if pd.notna(row.get('vendor_name')) and row['vendor_name']:
+                        st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1542,7 +1561,11 @@ elif page_clean == "Dashboard":
 
 # Page 7: View All Expenses
 elif page_clean == "View All Expenses":
-    st.header("📋 All Expenses")
+    # Dynamic header based on role
+    if st.session_state.user_role == "brand_heads":
+        st.header("📋 My Assigned Expenses")
+    else:
+        st.header("📋 All Expenses")
     
     # Get expenses based on user role
     if st.session_state.user_role == "brand_heads":
@@ -1668,6 +1691,8 @@ elif page_clean == "View All Expenses":
                     col4.metric("📊 Status", row['Overall_Status'])
                     
                     st.markdown(f"**📝 Description:** {row['description']}")
+                    if pd.notna(row.get('vendor_name')) and row['vendor_name']:
+                        st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
@@ -1888,78 +1913,73 @@ elif page_clean == "User Management":
                             col_x, col_y = st.columns(2)
                             with col_x:
                                 if st.form_submit_button("✅ Reset", use_container_width=True):
-                                    if len(new_pwd) >= 6:
-                                        reset_user_password(user['id'], new_pwd)
-                                        st.success("Password reset successfully! All user sessions invalidated.")
-                                        st.session_state[f'show_reset_{user["id"]}'] = False
-                                        st.rerun()
-                                    else:
-                                        st.error("Password must be at least 6 characters!")
-                            with col_y:
-                                if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                if len(new_pwd) >= 6:
+                                    reset_user_password(user['id'], new_pwd)
+                                    st.success("Password reset successfully! All user sessions invalidated.")
                                     st.session_state[f'show_reset_{user["id"]}'] = False
                                     st.rerun()
-                    
-                    # Delete Confirmation
-                    if st.session_state.get(f'confirm_delete_{user["id"]}', False):
-                        st.warning(f"⚠️ Are you sure you want to delete user '{user['username']}'?")
-                        col_x, col_y = st.columns(2)
-                        with col_x:
-                            if st.button("✅ Yes, Delete", key=f"confirm_yes_{user['id']}", type="primary"):
-                                delete_user(user['id'])
-                                st.success("User deleted successfully!")
-                                st.session_state[f'confirm_delete_{user["id"]}'] = False
-                                st.rerun()
+                                else:
+                                    st.error("Password must be at least 6 characters!")
                         with col_y:
-                            if st.button("❌ Cancel", key=f"confirm_no_{user['id']}"):
-                                st.session_state[f'confirm_delete_{user["id"]}'] = False
+                            if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                st.session_state[f'show_reset_{user["id"]}'] = False
                                 st.rerun()
-        else:
-            st.info("No users found.")
+                
+                # Delete Confirmation
+                if st.session_state.get(f'confirm_delete_{user["id"]}', False):
+                    st.warning(f"⚠️ Are you sure you want to delete user '{user['username']}'?")
+                    col_x, col_y = st.columns(2)
+                    with col_x:
+                        if st.button("✅ Yes, Delete", key=f"confirm_yes_{user['id']}", type="primary"):
+                            delete_user(user['id'])
+                            st.success("User deleted successfully!")
+                            st.session_state[f'confirm_delete_{user["id"]}'] = False
+                            st.rerun()
+                    with col_y:
+                        if st.button("❌ Cancel", key=f"confirm_no_{user['id']}"):
+                            st.session_state[f'confirm_delete_{user["id"]}'] = False
+                            st.rerun()
+    else:
+        st.info("No users found.")
+        col1, col2, col3 = st.columns([1, 2, 1])
 
-# Page 9: Change Passwod
-elif page_clean == "Change Password":
-    st.header("🔐 Change Password")
+with col2:
+    st.markdown(f"### Change password for: **{st.session_state.full_name}**")
+    st.markdown("---")
     
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        st.markdown(f"### Change password for: **{st.session_state.full_name}**")
-        st.markdown("---")
+    with st.form("change_password_form"):
+        current_password = st.text_input("Current Password", type="password", placeholder="Enter your current password")
+        new_password = st.text_input("New Password", type="password", placeholder="Enter new password (min 6 characters)")
+        confirm_password = st.text_input("Confirm New Password", type="password", placeholder="Re-enter new password")
         
-        with st.form("change_password_form"):
-            current_password = st.text_input("Current Password", type="password", placeholder="Enter your current password")
-            new_password = st.text_input("New Password", type="password", placeholder="Enter new password (min 6 characters)")
-            confirm_password = st.text_input("Confirm New Password", type="password", placeholder="Re-enter new password")
-            
-            submitted = st.form_submit_button("🔄 Change Password", use_container_width=True, type="primary")
-            
-            if submitted:
-                if not current_password or not new_password or not confirm_password:
-                    st.error("❌ Please fill all fields!")
-                elif len(new_password) < 6:
-                    st.error("❌ New password must be at least 6 characters long!")
-                elif new_password != confirm_password:
-                    st.error("❌ New passwords do not match!")
+        submitted = st.form_submit_button("🔄 Change Password", use_container_width=True, type="primary")
+        
+        if submitted:
+            if not current_password or not new_password or not confirm_password:
+                st.error("❌ Please fill all fields!")
+            elif len(new_password) < 6:
+                st.error("❌ New password must be at least 6 characters long!")
+            elif new_password != confirm_password:
+                st.error("❌ New passwords do not match!")
+            else:
+                success, message = change_password(st.session_state.username, current_password, new_password)
+                if success:
+                    st.success(f"✅ {message}")
+                    st.info("⚠️ All your sessions have been invalidated. Please login again.")
+                    time.sleep(2)
+                    
+                    # Logout user after password change
+                    if 'auth_token' in st.session_state and st.session_state.auth_token:
+                        invalidate_session_token(st.session_state.auth_token)
+                    clear_token_from_url()
+                    
+                    st.session_state.logged_in = False
+                    st.session_state.username = None
+                    st.session_state.full_name = None
+                    st.session_state.user_role = None
+                    if 'auth_token' in st.session_state:
+                        del st.session_state.auth_token
+                    
+                    st.rerun()
                 else:
-                    success, message = change_password(st.session_state.username, current_password, new_password)
-                    if success:
-                        st.success(f"✅ {message}")
-                        st.info("⚠️ All your sessions have been invalidated. Please login again.")
-                        time.sleep(2)
-                        
-                        # Logout user after password change
-                        if 'auth_token' in st.session_state and st.session_state.auth_token:
-                            invalidate_session_token(st.session_state.auth_token)
-                        clear_token_from_url()
-                        
-                        st.session_state.logged_in = False
-                        st.session_state.username = None
-                        st.session_state.full_name = None
-                        st.session_state.user_role = None
-                        if 'auth_token' in st.session_state:
-                            del st.session_state.auth_token
-                        
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {message}")
+                    st.error(f"❌ {message}")
