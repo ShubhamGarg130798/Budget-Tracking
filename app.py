@@ -1924,32 +1924,22 @@ elif page_clean == "User Management":
                                 if st.form_submit_button("❌ Cancel", use_container_width=True):
                                     st.session_state[f'show_reset_{user["id"]}'] = False
                                     st.rerun()
-                                    reset_user_password(user['id'], new_pwd)
-                                    st.success("Password reset successfully! All user sessions invalidated.")
-                                    st.session_state[f'show_reset_{user["id"]}'] = False
-                                    st.rerun()
-                                else:
-                                    st.error("Password must be at least 6 characters!")
-                        with col_y:
-                            if st.form_submit_button("❌ Cancel", use_container_width=True):
-                                st.session_state[f'show_reset_{user["id"]}'] = False
+                    
+                    # Delete Confirmation
+                    if st.session_state.get(f'confirm_delete_{user["id"]}', False):
+                        st.warning(f"⚠️ Are you sure you want to delete user '{user['username']}'?")
+                        col_x, col_y = st.columns(2)
+                        with col_x:
+                            if st.button("✅ Yes, Delete", key=f"confirm_yes_{user['id']}", type="primary"):
+                                delete_user(user['id'])
+                                st.success("User deleted successfully!")
+                                st.session_state[f'confirm_delete_{user["id"]}'] = False
                                 st.rerun()
-                
-                # Delete Confirmation
-                if st.session_state.get(f'confirm_delete_{user["id"]}', False):
-                    st.warning(f"⚠️ Are you sure you want to delete user '{user['username']}'?")
-                    col_x, col_y = st.columns(2)
-                    with col_x:
-                        if st.button("✅ Yes, Delete", key=f"confirm_yes_{user['id']}", type="primary"):
-                            delete_user(user['id'])
-                            st.success("User deleted successfully!")
-                            st.session_state[f'confirm_delete_{user["id"]}'] = False
-                            st.rerun()
-                    with col_y:
-                        if st.button("❌ Cancel", key=f"confirm_no_{user['id']}"):
-                            st.session_state[f'confirm_delete_{user["id"]}'] = False
-                            st.rerun()
-    else:
+                        with col_y:
+                            if st.button("❌ Cancel", key=f"confirm_no_{user['id']}"):
+                                st.session_state[f'confirm_delete_{user["id"]}'] = False
+                                st.rerun()
+        else:
             st.info("No users found.")
 
 # Page 9: Change Password
@@ -1960,41 +1950,41 @@ elif page_clean == "Change Password":
     
     with col2:
         st.markdown(f"### Change password for: **{st.session_state.full_name}**")
-    st.markdown("---")
-    
-    with st.form("change_password_form"):
-        current_password = st.text_input("Current Password", type="password", placeholder="Enter your current password")
-        new_password = st.text_input("New Password", type="password", placeholder="Enter new password (min 6 characters)")
-        confirm_password = st.text_input("Confirm New Password", type="password", placeholder="Re-enter new password")
+        st.markdown("---")
         
-        submitted = st.form_submit_button("🔄 Change Password", use_container_width=True, type="primary")
-        
-        if submitted:
-            if not current_password or not new_password or not confirm_password:
-                st.error("❌ Please fill all fields!")
-            elif len(new_password) < 6:
-                st.error("❌ New password must be at least 6 characters long!")
-            elif new_password != confirm_password:
-                st.error("❌ New passwords do not match!")
-            else:
-                success, message = change_password(st.session_state.username, current_password, new_password)
-                if success:
-                    st.success(f"✅ {message}")
-                    st.info("⚠️ All your sessions have been invalidated. Please login again.")
-                    time.sleep(2)
-                    
-                    # Logout user after password change
-                    if 'auth_token' in st.session_state and st.session_state.auth_token:
-                        invalidate_session_token(st.session_state.auth_token)
-                    clear_token_from_url()
-                    
-                    st.session_state.logged_in = False
-                    st.session_state.username = None
-                    st.session_state.full_name = None
-                    st.session_state.user_role = None
-                    if 'auth_token' in st.session_state:
-                        del st.session_state.auth_token
-                    
-                    st.rerun()
+        with st.form("change_password_form"):
+            current_password = st.text_input("Current Password", type="password", placeholder="Enter your current password")
+            new_password = st.text_input("New Password", type="password", placeholder="Enter new password (min 6 characters)")
+            confirm_password = st.text_input("Confirm New Password", type="password", placeholder="Re-enter new password")
+            
+            submitted = st.form_submit_button("🔄 Change Password", use_container_width=True, type="primary")
+            
+            if submitted:
+                if not current_password or not new_password or not confirm_password:
+                    st.error("❌ Please fill all fields!")
+                elif len(new_password) < 6:
+                    st.error("❌ New password must be at least 6 characters long!")
+                elif new_password != confirm_password:
+                    st.error("❌ New passwords do not match!")
                 else:
-                    st.error(f"❌ {message}")
+                    success, message = change_password(st.session_state.username, current_password, new_password)
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.info("⚠️ All your sessions have been invalidated. Please login again.")
+                        time.sleep(2)
+                        
+                        # Logout user after password change
+                        if 'auth_token' in st.session_state and st.session_state.auth_token:
+                            invalidate_session_token(st.session_state.auth_token)
+                        clear_token_from_url()
+                        
+                        st.session_state.logged_in = False
+                        st.session_state.username = None
+                        st.session_state.full_name = None
+                        st.session_state.user_role = None
+                        if 'auth_token' in st.session_state:
+                            del st.session_state.auth_token
+                        
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
