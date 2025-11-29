@@ -1521,7 +1521,15 @@ elif page_clean == "Dashboard":
 elif page_clean == "View All Expenses":
     st.header("📋 All Expenses")
     
-    df = get_all_expenses()
+    # Get expenses based on user role
+    if st.session_state.user_role == "brand_heads":
+        # Brand heads only see expenses assigned to them
+        df = get_all_expenses()
+        if not df.empty:
+            df = df[df['stage1_assigned_to'] == st.session_state.full_name]
+    else:
+        # Other roles see all expenses
+        df = get_all_expenses()
     
     if not df.empty:
         df['Overall_Status'] = df.apply(get_overall_status, axis=1)
