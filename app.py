@@ -1913,7 +1913,17 @@ elif page_clean == "User Management":
                             col_x, col_y = st.columns(2)
                             with col_x:
                                 if st.form_submit_button("✅ Reset", use_container_width=True):
-                                if len(new_pwd) >= 6:
+                                    if len(new_pwd) >= 6:
+                                        reset_user_password(user['id'], new_pwd)
+                                        st.success("Password reset successfully! All user sessions invalidated.")
+                                        st.session_state[f'show_reset_{user["id"]}'] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("Password must be at least 6 characters!")
+                            with col_y:
+                                if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                    st.session_state[f'show_reset_{user["id"]}'] = False
+                                    st.rerun()
                                     reset_user_password(user['id'], new_pwd)
                                     st.success("Password reset successfully! All user sessions invalidated.")
                                     st.session_state[f'show_reset_{user["id"]}'] = False
