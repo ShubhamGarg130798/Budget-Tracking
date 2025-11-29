@@ -187,6 +187,13 @@ def init_db():
         except sqlite3.OperationalError:
             pass
     
+    if 'due_date' not in columns:
+        try:
+            c.execute("ALTER TABLE expenses ADD COLUMN due_date DATE")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    
     conn.commit()
     conn.close()
 
@@ -435,13 +442,13 @@ def reset_user_password(user_id, new_password):
     conn.close()
 
 # Expense Functions
-def add_expense(date, brand, category, subcategory, amount, description, added_by, assigned_to=None, bill_document=None, bill_filename=None, bill_filetype=None, vendor_name=None):
+def add_expense(date, brand, category, subcategory, amount, description, added_by, assigned_to=None, bill_document=None, bill_filename=None, bill_filetype=None, vendor_name=None, due_date=None):
     conn = sqlite3.connect('expenses.db')
     c = conn.cursor()
     c.execute('''
-        INSERT INTO expenses (date, brand, category, subcategory, amount, description, added_by, stage1_assigned_to, bill_document, bill_filename, bill_filetype, vendor_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype, vendor_name))
+        INSERT INTO expenses (date, brand, category, subcategory, amount, description, added_by, stage1_assigned_to, bill_document, bill_filename, bill_filetype, vendor_name, due_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype, vendor_name, due_date))
     conn.commit()
     conn.close()
 
@@ -816,22 +823,23 @@ if page_clean == "Add Expense":
         col1, col2 = st.columns(2)
         
         with col1:
-            expense_date = st.date_input("📅 Date", value=date.today())
+            expense_date = st.date_input("📅 Expense Date", value=date.today())
             brand = st.selectbox("🏢 Brand", BRANDS)
             amount = st.number_input("💰 Amount (₹)", min_value=0.0, step=100.0, format="%.2f")
         
         with col2:
+            due_date = st.date_input("📆 Due Date", value=date.today())
             added_by = st.text_input("👤 Added By", value=st.session_state.full_name)
             vendor_name = st.text_input("🏪 Vendor Name", placeholder="Enter vendor/supplier name")
             
-            # Get brand heads for assignment
-            brand_heads = get_brand_heads()
-            if brand_heads:
-                brand_head_options = {bh[1]: bh[1] for bh in brand_heads}
-                assigned_to = st.selectbox("👨‍💼 Assign to Brand Head *", options=list(brand_head_options.keys()))
-            else:
-                st.warning("⚠️ No Brand Heads available. Please contact admin.")
-                assigned_to = None
+        # Get brand heads for assignment
+        brand_heads = get_brand_heads()
+        if brand_heads:
+            brand_head_options = {bh[1]: bh[1] for bh in brand_heads}
+            assigned_to = st.selectbox("👨‍💼 Assign to Brand Head *", options=list(brand_head_options.keys()))
+        else:
+            st.warning("⚠️ No Brand Heads available. Please contact admin.")
+            assigned_to = None
         
         description = st.text_area("📝 Description", placeholder="Enter expense details...")
         
@@ -852,7 +860,7 @@ if page_clean == "Add Expense":
                     bill_filename = uploaded_file.name
                     bill_filetype = uploaded_file.type
                 
-                add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype, vendor_name)
+                add_expense(expense_date, brand, category, subcategory, amount, description, added_by, assigned_to, bill_document, bill_filename, bill_filetype, vendor_name, due_date)
                 st.toast("✅ Expense has been added successfully!", icon="✅")
                 time.sleep(1)
                 st.rerun()
@@ -891,6 +899,8 @@ elif page_clean == "My Expenses":
                 st.markdown(f"**📝 Description:** {row['description']}")
                 if pd.notna(row.get('vendor_name')) and row['vendor_name']:
                     st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
+                if pd.notna(row.get('due_date')) and row['due_date']:
+                    st.markdown(f"**📆 Due Date:** {row['due_date']}")
                 st.markdown(f"**📅 Expense Date:** {row['date']}")
                 st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
                 if pd.notna(row.get('stage1_assigned_to')):
@@ -1051,6 +1061,8 @@ elif "Approval Stage 1" in page_clean:
                     st.markdown(f"**📝 Description:** {row['description']}")
                     if pd.notna(row.get('vendor_name')) and row['vendor_name']:
                         st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
+                    if pd.notna(row.get('due_date')) and row['due_date']:
+                        st.markdown(f"**📆 Due Date:** {row['due_date']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     if pd.notna(row.get('stage1_assigned_to')):
                         st.markdown(f"**👨‍💼 Assigned To:** {row['stage1_assigned_to']}")
@@ -1133,6 +1145,8 @@ elif "Approval Stage 1" in page_clean:
                     st.markdown(f"**📝 Description:** {row['description']}")
                     if pd.notna(row.get('vendor_name')) and row['vendor_name']:
                         st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
+                    if pd.notna(row.get('due_date')) and row['due_date']:
+                        st.markdown(f"**📆 Due Date:** {row['due_date']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1178,6 +1192,8 @@ elif "Approval Stage 2" in page_clean:
                     st.markdown(f"**📝 Description:** {row['description']}")
                     if pd.notna(row.get('vendor_name')) and row['vendor_name']:
                         st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
+                    if pd.notna(row.get('due_date')) and row['due_date']:
+                        st.markdown(f"**📆 Due Date:** {row['due_date']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1265,6 +1281,8 @@ elif "Approval Stage 2" in page_clean:
                     st.markdown(f"**📝 Description:** {row['description']}")
                     if pd.notna(row.get('vendor_name')) and row['vendor_name']:
                         st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
+                    if pd.notna(row.get('due_date')) and row['due_date']:
+                        st.markdown(f"**📆 Due Date:** {row['due_date']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1314,6 +1332,8 @@ elif "Approval Stage 3" in page_clean:
                     st.markdown(f"**📝 Description:** {row['description']}")
                     if pd.notna(row.get('vendor_name')) and row['vendor_name']:
                         st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
+                    if pd.notna(row.get('due_date')) and row['due_date']:
+                        st.markdown(f"**📆 Due Date:** {row['due_date']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1408,6 +1428,8 @@ elif "Approval Stage 3" in page_clean:
                     st.markdown(f"**📝 Description:** {row['description']}")
                     if pd.notna(row.get('vendor_name')) and row['vendor_name']:
                         st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
+                    if pd.notna(row.get('due_date')) and row['due_date']:
+                        st.markdown(f"**📆 Due Date:** {row['due_date']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     
@@ -1693,6 +1715,8 @@ elif page_clean == "View All Expenses":
                     st.markdown(f"**📝 Description:** {row['description']}")
                     if pd.notna(row.get('vendor_name')) and row['vendor_name']:
                         st.markdown(f"**🏪 Vendor:** {row['vendor_name']}")
+                    if pd.notna(row.get('due_date')) and row['due_date']:
+                        st.markdown(f"**📆 Due Date:** {row['due_date']}")
                     st.markdown(f"**👤 Submitted By:** {row['added_by']}")
                     st.markdown(f"**📅 Expense Date:** {row['date']}")
                     st.markdown(f"**🕐 Submitted On:** {row['created_at']}")
